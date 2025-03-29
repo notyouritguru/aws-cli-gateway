@@ -1,12 +1,3 @@
-<details><summary>Thinking</summary>Let me analyze the current README and prepare an update for version 0.2.0 that includes all the new features we've discussed, particularly:
-
-1. The new terminal integration with the 'gateway' command
-2. The removal of "Make Default" in favor of the connected profile approach
-3. The improved session management with fixes for circular dependencies
-4. Better error handling
-
-I'll preserve the existing structure while adding the new features.</details>
-
 # AWS CLI Gateway
 
 <p align="center">
@@ -141,8 +132,14 @@ The ```gateway``` command automatically uses whichever profile is currently conn
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Future Features
+## Future Features/Ideas
 
-- **Multiple connected profiles**: Support for connecting to multiple profiles simultaneously
-- **Profile grouping**: Organize profiles by account, region, or custom groups
-- **Enhanced terminal integration**: More powerful terminal commands and profile management
+- **IAM Profile Managment**:
+    - **Secure Credential Storage**: Store your credentials securely in macOS Keychain instead of plaintext
+    - **Credential Rotation**: Built-in reminders for rotating access keys per security best practices
+- **Enhanced Profile Organization**:
+    - **Profile grouping**: Organize profiles by account, region, or custom groups
+    - **Tagging**: Apply custom tags to profiles
+- **Enhanced Terminal Integration**:
+    - **Custom Commands**: Create aliases for complex AWS CLI commands
+    - **Auto-Completion**: Context-aware command completion
