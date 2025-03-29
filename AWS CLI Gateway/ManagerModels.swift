@@ -78,8 +78,11 @@ class RoleManager {
     }
 
     func deleteRole(named name: String) {
+        print("Deleting role: \(name)")
         roles.removeAll(where: { $0.name == name })
         saveRoles()
+        
+        print("Roles after deletion: \(roles.map { $0.name })")
     }
 
     private func populateDefaultRoles() {
@@ -166,8 +169,11 @@ class PermissionSetManager {
     }
 
     func deletePermissionSet(named name: String) {
+        print("Deleting permission set: \(name)")
         permissionSets.removeAll(where: { $0.displayName == name })
         savePermissionSets()
+
+        print("Permission sets after deletion: \(permissionSets.map { $0.displayName })")
     }
 
     private func populateDefaultPermissionSets() {

@@ -94,17 +94,17 @@ class MenuBarManager {
     @objc private func buildMenu() {
         let currentSessionTime = sessionMenuItem?.title ?? "Session: --:--:--"
         mainMenu.removeAllItems()
-        
+
         let connectionsSubMenu = NSMenu()
         let profiles = ConfigManager.shared.getProfiles()
-        
+
         if profiles.isEmpty {
             let noProfilesItem = NSMenuItem(title: "No Profiles Available", action: nil, keyEquivalent: "")
             connectionsSubMenu.addItem(noProfilesItem)
         } else {
             for profile in profiles {
                 let itemView = NSView(frame: NSRect(x: 0, y: 0, width: 175, height: Constants.UI.menuItemHeight))
-                
+
                 // Use the profile's displayName property which already handles the default case
                 let profileButton = ProfileButton(frame: NSRect(x: 10, y: 0, width: 125, height: Constants.UI.menuItemHeight))
                 profileButton.title = profile.displayName
@@ -118,7 +118,7 @@ class MenuBarManager {
                 if profile.name == activeProfile {
                     profileButton.state = .on
                 }
-                
+
                 // Add a "Default" indicator if this is the default profile
                 let defaultButton = ProfileButton(frame: NSRect(x: 130, y: 0, width: 20, height: Constants.UI.menuItemHeight))
                 defaultButton.image = profile.isDefault ?
@@ -129,40 +129,41 @@ class MenuBarManager {
                 defaultButton.target = self
                 defaultButton.action = #selector(setDefaultProfile(_:))
                 defaultButton.profile = profile
-                
-                let deleteButton = ProfileButton(frame: NSRect(x: 150, y: 0, width: 20, height: Constants.UI.menuItemHeight))
+
+                // Reposition the delete button to the far right
+                let deleteButton = ProfileButton(frame: NSRect(x: 155, y: 0, width: 20, height: Constants.UI.menuItemHeight))
                 deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete")
                 deleteButton.bezelStyle = .inline
                 deleteButton.isBordered = false
                 deleteButton.target = self
                 deleteButton.action = #selector(deleteProfile(_:))
                 deleteButton.profile = profile
-                
+
                 itemView.addSubview(profileButton)
                 itemView.addSubview(defaultButton)
                 itemView.addSubview(deleteButton)
-                
+
                 let menuItem = NSMenuItem()
                 menuItem.view = itemView
                 connectionsSubMenu.addItem(menuItem)
             }
         }
-        
+
         connectionsMenuItem = NSMenuItem(title: "Connections", action: nil, keyEquivalent: "")
         connectionsMenuItem.submenu = connectionsSubMenu
         mainMenu.addItem(connectionsMenuItem)
-        
+
         if activeProfile != nil {
             mainMenu.addItem(NSMenuItem.separator())
-            
+
             renewMenuItem = NSMenuItem(title: "Renew Session", action: #selector(renewSession), keyEquivalent: "")
             renewMenuItem.target = self
             mainMenu.addItem(renewMenuItem)
-            
+
             disconnectMenuItem = NSMenuItem(title: "Disconnect", action: #selector(disconnectProfile), keyEquivalent: "")
             disconnectMenuItem.target = self
             mainMenu.addItem(disconnectMenuItem)
-            
+
             let menuItem = NSMenuItem()
             let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 50))
             containerView.wantsLayer = true
@@ -197,18 +198,18 @@ class MenuBarManager {
                     }
                 }
             }
-            
+
             mainMenu.addItem(NSMenuItem.separator())
         }
-        
+
         let addProfileItem = NSMenuItem(title: "Add Profile...", action: #selector(showAddProfile), keyEquivalent: "n")
         addProfileItem.target = self
         mainMenu.addItem(addProfileItem)
-        
+
         let clearCacheItem = NSMenuItem(title: "Clear Cache", action: #selector(clearCache), keyEquivalent: "")
         clearCacheItem.target = self
         mainMenu.addItem(clearCacheItem)
-        
+
         mainMenu.addItem(NSMenuItem.separator())
         mainMenu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
@@ -281,33 +282,36 @@ class MenuBarManager {
     @MainActor
     @objc private func deleteProfile(_ sender: ProfileButton) {
         guard let profile = sender.profile else { return }
-        
+
         let alert = NSAlert()
         alert.messageText = "Delete Profile"
-        alert.informativeText = "Are you sure you want to delete the profile '\(profile.name)'? This cannot be undone."
+        alert.informativeText = "Are you sure you want to delete the profile '\(profile.displayName)'? This cannot be undone."
         alert.alertStyle = .warning
-        alert.icon = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: "Delete")
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
-        
+
         if alert.runModal() == .alertFirstButtonReturn {
             if profile.name == activeProfile {
+                // If the active profile is being deleted, disconnect first
                 Task {
                     do {
+                        SessionManager.shared.cleanDisconnect()
+                        // Attempt to properly logout via AWS CLI
                         _ = try await CommandRunner.shared.runCommand("aws", args: [
-                            "sso", "logout", "--profile", profile.name
-                        ])
+                            "sso", "logout", "--profile", profile.name])
                     } catch {
-                        // Ignore logout errors during deletion
+                        // If logout fails, still continue with deletion
+                        print("Logout failed during profile deletion: \(error.localizedDescription)")
                     }
+
                     ConfigManager.shared.clearCache()
-                    activeProfile = nil
+                    self.activeProfile = nil
                 }
             }
-            
+
             ConfigManager.shared.deleteProfile(profile.name)
             buildMenu()
-            
+
             NotificationCenter.default.post(
                 name: Notification.Name(Constants.Notifications.profilesUpdated),
                 object: nil

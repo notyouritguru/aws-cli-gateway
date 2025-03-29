@@ -1,8 +1,8 @@
 import SwiftUI
+import AppKit
 
 struct AddProfileView: View {
     let onClose: () -> Void
-
     @State private var selectedTab = 0
 
     var body: some View {
@@ -31,6 +31,218 @@ struct AddProfileView: View {
     }
 }
 
+// NSPopUpButton wrapper with delete button
+struct NativePopUpButton: NSViewRepresentable {
+    @Binding var selection: String
+    var options: [String]
+    var onDelete: ((String) -> Void)?
+    var onAddNew: (() -> Void)?
+    var addNewText: String = "Add new permission set..."
+
+    func makeNSView(context: Context) -> NSView {
+        // Container view to hold both popup button and delete button
+        let container = NSView()
+
+        // Create the popup button
+        let popUpButton = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 220, height: 25), pullsDown: false)
+        popUpButton.target = context.coordinator
+        popUpButton.action = #selector(Coordinator.selectionChanged(_:))
+        popUpButton.bezelStyle = .texturedSquare
+        popUpButton.font = NSFont.systemFont(ofSize: 13)
+        popUpButton.tag = 100 // Tag to identify in the container
+
+        // Create delete button (hidden initially)
+        let deleteButton = NSButton(frame: NSRect(x: 225, y: 0, width: 25, height: 25))
+        deleteButton.bezelStyle = .texturedSquare
+        deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete")
+        deleteButton.isBordered = true
+        deleteButton.target = context.coordinator
+        deleteButton.action = #selector(Coordinator.deleteSelectedOption(_:))
+        deleteButton.tag = 101 // Tag to identify in the container
+        deleteButton.isHidden = true // Hidden initially
+
+        container.addSubview(popUpButton)
+        container.addSubview(deleteButton)
+
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        // Get the popup button from the container
+        guard let popUpButton = container.viewWithTag(100) as? NSPopUpButton,
+              let deleteButton = container.viewWithTag(101) as? NSButton else {
+            return
+        }
+
+        // Clear existing items
+        popUpButton.removeAllItems()
+
+        // Add options as regular menu items
+        for option in options {
+            popUpButton.addItem(withTitle: option)
+        }
+
+        // Add "Add new..." option if needed
+        if onAddNew != nil {
+            popUpButton.menu?.addItem(NSMenuItem.separator())
+            let addItem = NSMenuItem(title: addNewText, action: #selector(Coordinator.addNewOption(_:)), keyEquivalent: "")
+            addItem.target = context.coordinator
+            popUpButton.menu?.addItem(addItem)
+        }
+
+        // Set selected item
+        if let index = options.firstIndex(of: selection) {
+            popUpButton.selectItem(at: index)
+
+            // Show delete button if selection isn't the placeholder and we have a delete handler
+            deleteButton.isHidden = (selection == "-----" || onDelete == nil)
+        } else if !options.isEmpty {
+            popUpButton.selectItem(at: 0)
+            deleteButton.isHidden = true
+
+            // Update binding if selection is invalid
+            if !options.contains(selection) {
+                DispatchQueue.main.async {
+                    selection = options[0]
+                }
+            }
+        }
+
+        // Update coordinator with current state
+        context.coordinator.options = options
+        context.coordinator.container = container
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject {
+        var parent: NativePopUpButton
+        var options: [String] = []
+        weak var container: NSView?
+
+        init(_ parent: NativePopUpButton) {
+            self.parent = parent
+            self.options = parent.options
+        }
+
+        @objc func selectionChanged(_ sender: NSPopUpButton) {
+            guard let deleteButton = container?.viewWithTag(101) as? NSButton,
+                  sender.indexOfSelectedItem >= 0 else { return }
+
+            let selectedOption = sender.titleOfSelectedItem ?? ""
+
+            // Update binding
+            DispatchQueue.main.async {
+                self.parent.selection = selectedOption
+
+                // Update delete button visibility
+                deleteButton.isHidden = (selectedOption == "-----" || self.parent.onDelete == nil)
+            }
+        }
+
+        @objc func deleteSelectedOption(_ sender: NSButton) {
+            guard let popUpButton = container?.viewWithTag(100) as? NSPopUpButton,
+                  let selectedOption = popUpButton.titleOfSelectedItem,
+                  selectedOption != "-----" else {
+                return
+            }
+
+            // Show confirmation alert
+            let alert = NSAlert()
+            alert.messageText = "Delete Item"
+            alert.informativeText = "Are you sure you want to delete \(selectedOption)?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+
+            if let window = container?.window {
+                alert.beginSheetModal(for: window) { response in
+                    if response == .alertFirstButtonReturn {
+                        DispatchQueue.main.async {
+                            self.parent.onDelete?(selectedOption)
+                        }
+                    }
+                }
+            } else {
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    DispatchQueue.main.async {
+                        self.parent.onDelete?(selectedOption)
+                    }
+                }
+            }
+        }
+
+        @objc func addNewOption(_ sender: NSMenuItem) {
+            DispatchQueue.main.async {
+                self.parent.onAddNew?()
+            }
+        }
+    }
+}
+
+// Simple native popup without delete button - for standard dropdowns
+struct NativeDropdown: NSViewRepresentable {
+    @Binding var selection: String
+    var options: [String]
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let popUpButton = NSPopUpButton(frame: .zero, pullsDown: false)
+        popUpButton.target = context.coordinator
+        popUpButton.action = #selector(Coordinator.selectionChanged(_:))
+
+        // Match the style of the other popups
+        popUpButton.bezelStyle = .texturedSquare
+        popUpButton.font = NSFont.systemFont(ofSize: 13)
+
+        return popUpButton
+    }
+
+    func updateNSView(_ popUpButton: NSPopUpButton, context: Context) {
+        // Clear existing items
+        popUpButton.removeAllItems()
+
+        // Add options
+        for option in options {
+            popUpButton.addItem(withTitle: option)
+        }
+
+        // Set selected item
+        if let index = options.firstIndex(of: selection) {
+            popUpButton.selectItem(at: index)
+        } else if !options.isEmpty {
+            popUpButton.selectItem(at: 0)
+            if !options.contains(selection) {
+                DispatchQueue.main.async {
+                    selection = options[0]
+                }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject {
+        var parent: NativeDropdown
+
+        init(_ parent: NativeDropdown) {
+            self.parent = parent
+        }
+
+        @objc func selectionChanged(_ sender: NSPopUpButton) {
+            if let selectedOption = sender.titleOfSelectedItem {
+                DispatchQueue.main.async {
+                    self.parent.selection = selectedOption
+                }
+            }
+        }
+    }
+}
+
 // MARK: - SSO Profile Tab
 struct SSOProfileTab: View {
     let onClose: () -> Void
@@ -42,71 +254,136 @@ struct SSOProfileTab: View {
     @State private var output = "json"
     @State private var errorMessage: String?
     @State private var showAddPermissionSetSheet = false
+    @State private var permissionSets: [PermissionSet] = []
+    @State private var permissionSetToDelete: String?
+    @State private var showDeleteConfirmation = false
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case startUrl, accountId
+    }
 
     private let regions = SSOProfile.commonRegions
 
     var body: some View {
-        Form {
-            Picker("Permission Set", selection: $selectedPermissionSet) {
-                ForEach(PermissionSetManager.shared.getPermissionSets(), id: \.displayName) { permissionSet in
-                    Text(permissionSet.displayName).tag(permissionSet.displayName)
-                }
-                Divider()
-                Text("Add new permission set...").tag("add_new")
-            }
-            .onChange(of: selectedPermissionSet) { oldValue, newValue in
-                if newValue == "add_new" {
-                    showAddPermissionSetSheet = true
-                    // Reset selection to prevent issues when sheet is dismissed
-                    DispatchQueue.main.async {
-                        selectedPermissionSet = "-----"
-                    }
-                }
-            }
+        Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 15) {
+            GridRow {
+                Text("Permission Set")
+                    .gridColumnAlignment(.trailing)
 
-            Picker("Region", selection: $region) {
-                ForEach(regions, id: \.self) { region in
-                    Text(region).tag(region)
-                }
+                NativePopUpButton(
+                    selection: $selectedPermissionSet,
+                    options: ["-----"] + permissionSets.map { $0.displayName },
+                    onDelete: { itemToDelete in
+                        if itemToDelete != "-----" {
+                            permissionSetToDelete = itemToDelete
+                            showDeleteConfirmation = true
+                        }
+                    },
+                    onAddNew: {
+                        showAddPermissionSetSheet = true
+                    },
+                    addNewText: "Add new permission set..."
+                )
+                .frame(width: 250, height: 25)
             }
 
-            TextField("Start URL", text: $startUrl)
-                .textFieldStyle(.roundedBorder)
+            GridRow {
+                Text("Region")
+                    .gridColumnAlignment(.trailing)
 
-            TextField("Account ID", text: $accountId)
-                .textFieldStyle(.roundedBorder)
+                NativeDropdown(
+                    selection: $region,
+                    options: regions
+                )
+                .frame(width: 250, height: 25)
+            }
 
-            Picker("Output", selection: $output) {
-                ForEach(Constants.AWS.outputFormats, id: \.self) { format in
-                    Text(format).tag(format)
-                }
+            GridRow {
+                Text("Start URL")
+                    .gridColumnAlignment(.trailing)
+
+                TextField("", text: $startUrl)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .startUrl)
+                    .frame(width: 250)
+            }
+
+            GridRow {
+                Text("Account ID")
+                    .gridColumnAlignment(.trailing)
+
+                TextField("", text: $accountId)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .accountId)
+                    .frame(width: 250)
+            }
+
+            GridRow {
+                Text("Output")
+                    .gridColumnAlignment(.trailing)
+
+                NativeDropdown(
+                    selection: $output,
+                    options: Constants.AWS.outputFormats
+                )
+                .frame(width: 250, height: 25)
             }
 
             if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.caption)
+                GridRow {
+                    Text("")
+
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
             }
 
-            HStack {
-                Button("Cancel") {
-                    onClose()
-                }
+            GridRow {
+                Text("")
 
-                Spacer()
+                HStack {
+                    Button("Cancel") {
+                        onClose()
+                    }
 
-                Button("Save") {
-                    saveProfile()
+                    Spacer()
+
+                    Button("Save") {
+                        saveProfile()
+                    }
+                    .disabled(!isValid)
                 }
-                .disabled(!isValid)
+                .frame(width: 250)
             }
         }
         .padding()
-        .sheet(isPresented: $showAddPermissionSetSheet) {
+        .onAppear {
+            loadPermissionSets()
+        }
+        .sheet(isPresented: $showAddPermissionSetSheet, onDismiss: {
+            loadPermissionSets()
+        }) {
             AddPermissionSetView {
-                // Refresh permission sets when sheet is dismissed
-                selectedPermissionSet = "-----"
+                loadPermissionSets()
             }
+        }
+        .alert(isPresented: $showDeleteConfirmation) {
+            Alert(
+                title: Text("Delete Permission Set"),
+                message: Text("Are you sure you want to delete this permission set?"),
+                primaryButton: .destructive(Text("Delete")) {
+                    if let setToDelete = permissionSetToDelete {
+                        PermissionSetManager.shared.deletePermissionSet(named: setToDelete)
+                        loadPermissionSets()
+                        if selectedPermissionSet == setToDelete {
+                            selectedPermissionSet = "-----"
+                        }
+                    }
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
 
@@ -114,18 +391,21 @@ struct SSOProfileTab: View {
         !startUrl.isEmpty &&
         !accountId.isEmpty &&
         region != "-----" &&
-        selectedPermissionSet != "-----" &&
-        selectedPermissionSet != "add_new"
+        selectedPermissionSet != "-----"
+    }
+
+    private func loadPermissionSets() {
+        permissionSets = PermissionSetManager.shared.getPermissionSets()
     }
 
     private func saveProfile() {
-        guard let permissionSet = PermissionSetManager.shared.getPermissionSets().first(where: { $0.displayName == selectedPermissionSet }) else {
+        guard let permissionSet = permissionSets.first(where: { $0.displayName == selectedPermissionSet }) else {
             errorMessage = "Invalid permission set selection"
             return
         }
 
         let profile = SSOProfile(
-            name: permissionSet.displayName, // Use permission set name as profile name
+            name: permissionSet.displayName,
             startUrl: startUrl,
             region: region,
             accountId: accountId,
@@ -162,69 +442,80 @@ struct IAMRoleTab: View {
     @State private var showAddRoleSheet = false
     @State private var roleToDelete: String?
     @State private var showDeleteConfirmation = false
-
     @State private var availableProfiles: [String] = []
     @State private var availableRoles: [Role] = []
 
     var body: some View {
-        Form {
-            Picker("Assume Role", selection: $selectedRole) {
-                ForEach(availableRoles, id: \.name) { role in
-                    HStack {
-                        Text(role.name).tag(role.name)
-                        Spacer()
-                        Button(action: {
-                            roleToDelete = role.name
+        Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 15) {
+            GridRow {
+                Text("Assume Role")
+                    .gridColumnAlignment(.trailing)
+
+                NativePopUpButton(
+                    selection: $selectedRole,
+                    options: ["-----"] + availableRoles.map { $0.name },
+                    onDelete: { itemToDelete in
+                        if itemToDelete != "-----" {
+                            roleToDelete = itemToDelete
                             showDeleteConfirmation = true
-                        }) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
                         }
-                        .buttonStyle(BorderlessButtonStyle())
-                    }
-                }
-                Divider()
-                Text("Add new role...").tag("add_new")
-            }
-            .onChange(of: selectedRole) { oldValue, newValue in
-                if newValue == "add_new" {
-                    showAddRoleSheet = true
-                    // Reset selection to prevent issues when sheet is dismissed
-                    DispatchQueue.main.async {
-                        selectedRole = "-----"
-                    }
-                }
+                    },
+                    onAddNew: {
+                        showAddRoleSheet = true
+                    },
+                    addNewText: "Add new role..."
+                )
+                .frame(width: 250, height: 25)
             }
 
-            Picker("Source Profile", selection: $sourceProfile) {
-                ForEach(availableProfiles, id: \.self) { profile in
-                    Text(profile).tag(profile)
-                }
+            GridRow {
+                Text("Source Profile")
+                    .gridColumnAlignment(.trailing)
+
+                NativeDropdown(
+                    selection: $sourceProfile,
+                    options: availableProfiles
+                )
+                .frame(width: 250, height: 25)
             }
 
-            Picker("Output", selection: $output) {
-                ForEach(Constants.AWS.outputFormats, id: \.self) { format in
-                    Text(format).tag(format)
-                }
+            GridRow {
+                Text("Output")
+                    .gridColumnAlignment(.trailing)
+
+                NativeDropdown(
+                    selection: $output,
+                    options: Constants.AWS.outputFormats
+                )
+                .frame(width: 250, height: 25)
             }
 
             if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.caption)
+                GridRow {
+                    Text("")
+
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
             }
 
-            HStack {
-                Button("Cancel") {
-                    onClose()
-                }
+            GridRow {
+                Text("")
 
-                Spacer()
+                HStack {
+                    Button("Cancel") {
+                        onClose()
+                    }
 
-                Button("Save") {
-                    saveIAMProfile()
+                    Spacer()
+
+                    Button("Save") {
+                        saveIAMProfile()
+                    }
+                    .disabled(!isValid)
                 }
-                .disabled(!isValid)
+                .frame(width: 250)
             }
         }
         .padding()
@@ -232,7 +523,9 @@ struct IAMRoleTab: View {
             loadAvailableProfiles()
             loadAvailableRoles()
         }
-        .sheet(isPresented: $showAddRoleSheet) {
+        .sheet(isPresented: $showAddRoleSheet, onDismiss: {
+            loadAvailableRoles()
+        }) {
             AddRoleView {
                 loadAvailableRoles()
             }
@@ -245,6 +538,9 @@ struct IAMRoleTab: View {
                     if let roleToDelete = roleToDelete {
                         RoleManager.shared.deleteRole(named: roleToDelete)
                         loadAvailableRoles()
+                        if selectedRole == roleToDelete {
+                            selectedRole = "-----"
+                        }
                     }
                 },
                 secondaryButton: .cancel()
@@ -254,8 +550,7 @@ struct IAMRoleTab: View {
 
     private var isValid: Bool {
         sourceProfile != "-----" &&
-        selectedRole != "-----" &&
-        selectedRole != "add_new"
+        selectedRole != "-----"
     }
 
     private func loadAvailableProfiles() {
@@ -362,6 +657,11 @@ struct AddRoleView: View {
     @State private var roleName = ""
     @State private var roleArn = ""
     @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case roleName, roleArn
+    }
 
     var body: some View {
         VStack {
@@ -372,9 +672,16 @@ struct AddRoleView: View {
             Form {
                 TextField("Role Name", text: $roleName)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .roleName)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            focusedField = .roleName
+                        }
+                    }
 
                 TextField("Role ARN", text: $roleArn)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .roleArn)
 
                 if let errorMessage = errorMessage {
                     Text(errorMessage)
@@ -421,6 +728,11 @@ struct AddPermissionSetView: View {
     @State private var displayName = ""
     @State private var permissionSetName = ""
     @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case displayName, permissionSetName
+    }
 
     var body: some View {
         VStack {
@@ -431,9 +743,16 @@ struct AddPermissionSetView: View {
             Form {
                 TextField("Display Name", text: $displayName)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .displayName)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            focusedField = .displayName
+                        }
+                    }
 
                 TextField("Permission Set Name", text: $permissionSetName)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .permissionSetName)
 
                 if let errorMessage = errorMessage {
                     Text(errorMessage)
@@ -469,12 +788,5 @@ struct AddPermissionSetView: View {
         PermissionSetManager.shared.addPermissionSet(newPermissionSet)
         onDismiss()
         presentationMode.wrappedValue.dismiss()
-    }
-}
-
-// MARK: - Preview Provider
-struct AddProfileView_Previews: PreviewProvider {
-    static var previews: some View {
-        AddProfileView(onClose: {})
     }
 }
