@@ -30,9 +30,11 @@ AWS CLI Gateway offers a comprehensive set of features to streamline your AWS pr
 
 ## Installation
 
+This app is open source and not signed with an Apple Developer ID.
+
 ### Option 1: Download the Application
 
-1. Download the ```.app``` file from the Releases page
+1. Download the ```.zip``` file from the [Release Page](https://github.com/notyouritguru/aws-cli-gateway/releases/tag/v0.1.0)
 2. Move the application to your Applications folder
 3. When launching for the first time, macOS will show a security warning
 4. Go to **System Settings > Privacy & Security** and click **Open Anyway**
@@ -62,7 +64,7 @@ AWS CLI Gateway offers a comprehensive set of features to streamline your AWS pr
 
 ## Screenshots
 
-<img src="screenshots/Menu Bar.png">
+<img src="screenshots/Menu Bar.png" width= 85%>
 
 <img src="screenshots/Permission Sets.png" width= 75%>
 
@@ -83,3 +85,9 @@ AWS CLI Gateway offers a comprehensive set of features to streamline your AWS pr
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Upcoming Feature(s)
+
+- **Terminal commands**: ```gateway s3 ls```. This will execute the aws cli command using the connected profile.
+
+
