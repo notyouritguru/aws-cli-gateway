@@ -100,4 +100,28 @@ class CommandRunner {
         // Return stdout
         return outputString
     }
+    
+    func login(profileName: String, completion: @escaping (Bool) -> Void) {
+        let command = "aws sso login --profile \(profileName)"
+
+        let task = Process()
+        task.launchPath = "/bin/zsh"
+        task.arguments = ["-c", command]
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        task.standardOutput = outputPipe
+        task.standardError = errorPipe
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            let success = task.terminationStatus == 0
+            completion(success)
+        } catch {
+            print("Error launching process: \(error)")
+            completion(false)
+        }
+    }
 }

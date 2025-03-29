@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A1EA61B2D9861FB00294D9A /* SSOTokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1EA61A2D9861F500294D9A /* SSOTokenManager.swift */; };
+		1A1EA61C2D9861FB00294D9A /* SSOTokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1EA61A2D9861F500294D9A /* SSOTokenManager.swift */; };
+		1A1EA61D2D9861FB00294D9A /* SSOTokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1EA61A2D9861F500294D9A /* SSOTokenManager.swift */; };
 		1A430D432D9787E60030579F /* AWS_CLI_GatewayUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A430D412D9787E60030579F /* AWS_CLI_GatewayUITestsLaunchTests.swift */; };
 		1A430D442D9787E60030579F /* AWS_CLI_GatewayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A430D3E2D9787E60030579F /* AWS_CLI_GatewayTests.swift */; };
 		1A430D452D9787E60030579F /* AWS_CLI_GatewayUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A430D402D9787E60030579F /* AWS_CLI_GatewayUITests.swift */; };
@@ -90,6 +93,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1A1EA61A2D9861F500294D9A /* SSOTokenManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSOTokenManager.swift; sourceTree = "<group>"; };
 		1A430D3E2D9787E60030579F /* AWS_CLI_GatewayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWS_CLI_GatewayTests.swift; sourceTree = "<group>"; };
 		1A430D402D9787E60030579F /* AWS_CLI_GatewayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWS_CLI_GatewayUITests.swift; sourceTree = "<group>"; };
 		1A430D412D9787E60030579F /* AWS_CLI_GatewayUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWS_CLI_GatewayUITestsLaunchTests.swift; sourceTree = "<group>"; };
@@ -191,6 +195,7 @@
 				F27D5A472D96E07500261F26 /* ManagerModels.swift */,
 				1A96BB5F2D78823700C64C80 /* StatusIndicator.swift */,
 				1A96BB602D78823700C64C80 /* WindowManager.swift */,
+				1A1EA61A2D9861F500294D9A /* SSOTokenManager.swift */,
 			);
 			path = "AWS CLI Gateway";
 			sourceTree = "<group>";
@@ -363,6 +368,7 @@
 				1A96BB982D7B429D00C64C80 /* ProfileHistoryManager.swift in Sources */,
 				F27D5A492D96E07A00261F26 /* ManagerModels.swift in Sources */,
 				1A96BB682D78823700C64C80 /* ConfigManager.swift in Sources */,
+				1A1EA61B2D9861FB00294D9A /* SSOTokenManager.swift in Sources */,
 				1A96BB692D78823700C64C80 /* ContentView.swift in Sources */,
 				1A96BB6A2D78823700C64C80 /* SSOProfile.swift in Sources */,
 				1A96BB6B2D78823700C64C80 /* AppDelegate.swift in Sources */,
@@ -393,6 +399,7 @@
 				1A96BB7B2D78823700C64C80 /* WindowManager.swift in Sources */,
 				1A96BB7C2D78823700C64C80 /* Constants.swift in Sources */,
 				1A96BB7D2D78823700C64C80 /* SessionManager.swift in Sources */,
+				1A1EA61C2D9861FB00294D9A /* SSOTokenManager.swift in Sources */,
 				1A96BB7E2D78823700C64C80 /* AWS_CLI_GatewayApp.swift in Sources */,
 				1A96BB7F2D78823700C64C80 /* CommandRunner.swift in Sources */,
 				1A96BB802D78823700C64C80 /* MenuBarManager.swift in Sources */,
@@ -420,6 +427,7 @@
 				1A96BB8E2D78823700C64C80 /* WindowManager.swift in Sources */,
 				1A96BB8F2D78823700C64C80 /* Constants.swift in Sources */,
 				1A96BB902D78823700C64C80 /* SessionManager.swift in Sources */,
+				1A1EA61D2D9861FB00294D9A /* SSOTokenManager.swift in Sources */,
 				1A96BB912D78823700C64C80 /* AWS_CLI_GatewayApp.swift in Sources */,
 				1A96BB922D78823700C64C80 /* CommandRunner.swift in Sources */,
 				1A96BB932D78823700C64C80 /* MenuBarManager.swift in Sources */,

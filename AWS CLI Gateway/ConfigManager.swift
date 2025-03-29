@@ -3,44 +3,28 @@ import Foundation
 protocol AWSProfile {
     var name: String { get }
     var region: String { get }
-    var isDefault: Bool { get }
     var displayName: String { get }
 }
 
 extension SSOProfile: AWSProfile {
-    var isDefault: Bool {
-        name == "default"
-    }
-    
     var displayName: String {
-        if isDefault {
-            return ProfileHistoryManager.shared.getDefaultProfileOriginalName() ?? name
-        }
         return name
     }
 }
 
 extension IAMProfile: AWSProfile {
-    var isDefault: Bool {
-        name == "default"
-    }
-    
     var displayName: String {
-        if isDefault {
-            return ProfileHistoryManager.shared.getDefaultProfileOriginalName() ?? name
-        }
         return name
     }
 }
 
 class ConfigManager {
     static let shared = ConfigManager()
-    
+
     private let awsDirectory: URL
     private let configFile: URL
     private let cacheDirectory: URL
-    private var defaultProfileOriginalName: String?
-    
+
     private init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         self.awsDirectory = homeDir.appendingPathComponent(".aws")
@@ -48,33 +32,33 @@ class ConfigManager {
         self.cacheDirectory = awsDirectory.appendingPathComponent("cli/cache")
         ensureDirectoryPermissions()
     }
-    
+
     // MARK: - Setup & Permissions
-    
+
     func ensureDirectoryPermissions() {
         let fileManager = FileManager.default
-        
+
         do {
             // Create .aws directory if it doesn't exist
             if !fileManager.fileExists(atPath: awsDirectory.path) {
                 try fileManager.createDirectory(at: awsDirectory, withIntermediateDirectories: true, attributes: nil)
             }
-            
+
             // Set permissions for .aws directory (700)
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: awsDirectory.path)
-            
+
             // Create and set permissions for config file (600)
             if !fileManager.fileExists(atPath: configFile.path) {
                 try "".write(to: configFile, atomically: true, encoding: .utf8)
             }
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
-            
+
             // Ensure cli/cache directory exists with proper permissions
             if !fileManager.fileExists(atPath: cacheDirectory.path) {
                 try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
             }
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cacheDirectory.path)
-            
+
             // Recursively set permissions for all files and directories in .aws
             let enumerator = fileManager.enumerator(at: awsDirectory, includingPropertiesForKeys: [.isDirectoryKey])
             while let url = enumerator?.nextObject() as? URL {
@@ -89,251 +73,37 @@ class ConfigManager {
                     }
                 }
             }
-            
+
         } catch {
             print("Error setting up AWS directory permissions: \(error)")
         }
     }
-    
+
     func syncProfilesWithHistory() {
         // Get all profile names from the config file
         let profileNames = getProfiles().map { $0.name }
-        
+
         // Remove "default" from the list
         let nonDefaultProfiles = profileNames.filter { $0 != "default" }
-        
+
         // Sync with history manager
         ProfileHistoryManager.shared.syncWithConfigProfiles(nonDefaultProfiles)
     }
-    
-    // MARK: - Default Profile Management
-    func setDefaultProfile(_ profileName: String) throws {
-        guard let content = try? String(contentsOf: configFile, encoding: .utf8) else {
-            throw ConfigError.fileReadError
-        }
-        
-        // Get all profiles to work with
-        let profiles = getProfiles()
-        guard let targetProfile = profiles.first(where: { $0.name == profileName }) else {
-            throw ConfigError.invalidProfile
-        }
-        
-        // Parse the AWS config file to find all blocks
-        let lines = content.components(separatedBy: .newlines)
-        var blocks: [String: [String]] = [:]
-        var currentBlockHeader: String? = nil
-        var currentBlockContent: [String] = []
-        
-        // First pass: collect all blocks with their content
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
-            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
-                // Save previous block if exists
-                if let header = currentBlockHeader, !currentBlockContent.isEmpty {
-                    blocks[header] = currentBlockContent
-                }
-                
-                // Start new block
-                currentBlockHeader = trimmed
-                currentBlockContent = []
-            } else if !trimmed.isEmpty, let _ = currentBlockHeader {
-                // Add line to current block
-                currentBlockContent.append(line)
-            }
-        }
-        
-        // Save the last block
-        if let header = currentBlockHeader, !currentBlockContent.isEmpty {
-            blocks[header] = currentBlockContent
-        }
-        
-        // Find the target profile block and default block
-        let targetProfileHeader = "[profile \(profileName)]"
-        let defaultHeader = "[default]"
-        
-        // Get content for target profile and default (if exists)
-        let targetContent = blocks[targetProfileHeader] ?? []
-        let defaultContent = blocks[defaultHeader] ?? []
-        
-        // Extract the ID from targetContent if it exists
-        var targetProfileId: String? = nil
-        for line in targetContent {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("id = ") {
-                let parts = line.split(separator: "=", maxSplits: 1)
-                if parts.count == 2 {
-                    targetProfileId = parts[1].trimmingCharacters(in: .whitespaces)
-                }
-            }
-        }
-        
-        // Extract the ID from defaultContent if it exists
-        var defaultProfileId: String? = nil
-        for line in defaultContent {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("id = ") {
-                let parts = line.split(separator: "=", maxSplits: 1)
-                if parts.count == 2 {
-                    defaultProfileId = parts[1].trimmingCharacters(in: .whitespaces)
-                }
-            }
-        }
-        
-        // For IAM profiles, preserve the sso-session block
-        var ssoSessionHeader: String? = nil
-        var ssoSessionContent: [String]? = nil
-        
-        if targetProfile is IAMProfile {
-            // Find the associated SSO session for the IAM profile
-            if let iamProfile = targetProfile as? IAMProfile {
-                ssoSessionHeader = "[sso-session \(iamProfile.ssoSession)]"
-                ssoSessionContent = blocks[ssoSessionHeader ?? ""] ?? []
-            }
-        }
-        
-        // Check if the current default is an IAM profile
-        let isCurrentDefaultIAM = defaultProfileId != nil &&
-                                  ProfileHistoryManager.shared.getProfileInfo(withId: defaultProfileId ?? "")?.profileType == .iam
-        
-        // If the current default is an IAM profile, restore relationship
-        if isCurrentDefaultIAM, let defaultId = defaultProfileId,
-           let previousDefaultInfo = ProfileHistoryManager.shared.getProfileInfo(withId: defaultId),
-           let linkedToId = previousDefaultInfo.linkedToId,
-           let linkedToName = ProfileHistoryManager.shared.getProfileNameById(linkedToId) {
-            
-            // Previous default was an IAM profile, restore its source_profile relationship
-            let previousDefaultName = previousDefaultInfo.originalName
-            let previousDefaultHeader = "[profile \(previousDefaultName)]"
-            
-            // Create or update the profile block for the previous default
-            var previousDefaultContent: [String] = []
-            
-            // Copy content from default, but update source_profile
-            for line in defaultContent {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                
-                if trimmed.hasPrefix("source_profile = ") {
-                    // If the linked profile is becoming the new default, use "default"
-                    if linkedToId == targetProfileId {
-                        previousDefaultContent.append("source_profile = default")
-                    } else {
-                        // Otherwise use the linked profile's name
-                        previousDefaultContent.append("source_profile = \(linkedToName)")
-                    }
-                } else {
-                    previousDefaultContent.append(line)
-                }
-            }
-            
-            // Remove any existing profile with this name to avoid duplicates
-            blocks.removeValue(forKey: previousDefaultHeader)
-            
-            // Update the blocks with the restored profile
-            blocks[previousDefaultHeader] = previousDefaultContent
-        }
-        
-        // Update relationships for the new default profile
-        updateRelationshipsForDefault(profileName: profileName, profileId: targetProfileId, blocks: &blocks)
-        
-        // Build new config content
-        var newContent = ""
-        
-        // Update the profile history to mark this profile as default
-        if let targetId = targetProfileId {
-            ProfileHistoryManager.shared.setDefaultProfileById(targetId)
-        } else {
-            ProfileHistoryManager.shared.setDefaultProfile(profileName)
-        }
-        
-        // First add the default (which will be the target profile's content)
-        // Use the updated content from blocks
-        let updatedTargetContent = blocks[targetProfileHeader] ?? targetContent
-        
-        newContent += defaultHeader + "\n"
-        for line in updatedTargetContent {
-            newContent += line + "\n"
-        }
-        newContent += "\n"
-        
-        // If there was a default profile, rename it
-        if !defaultContent.isEmpty && profileName != "default" {
-            // Get the original default profile name from history if available
-            let previousDefaultName: String
-            if let defaultId = defaultProfileId,
-               let originalName = ProfileHistoryManager.shared.getProfileNameById(defaultId) {
-                 previousDefaultName = originalName
-            } else {
-                // Fallback
-                previousDefaultName = ProfileHistoryManager.shared.getDefaultProfileOriginalName() ?? (profileName + "-previous")
-            }
-            
-            // Only add this profile if it's not the one becoming default
-            if previousDefaultName != profileName {
-                // Remove any existing profile with this name to avoid duplicates
-                blocks.removeValue(forKey: "[profile \(previousDefaultName)]")
-                
-                newContent += "[profile \(previousDefaultName)]" + "\n"
-                for line in defaultContent {
-                    newContent += line + "\n"
-                }
-                newContent += "\n"
-            }
-        }
-        
-        // Add all other blocks except previously handled
-        for (header, content) in blocks {
-            // Skip empty blocks and the blocks we've already handled
-            if header != defaultHeader && header != targetProfileHeader && header != ssoSessionHeader && !content.isEmpty {
-                newContent += header + "\n"
-                for line in content {
-                    newContent += line + "\n"
-                }
-                newContent += "\n"
-            }
-        }
-        
-        // If there is a SSO session block, add it to the end
-        if let header = ssoSessionHeader, let content = ssoSessionContent {
-            newContent += header + "\n"
-            for line in content {
-                newContent += line + "\n"
-            }
-            newContent += "\n"
-        }
-        
-        // Write the updated content
-        do {
-            try newContent.write(to: configFile, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
-        } catch {
-            throw ConfigError.fileWriteError
-        }
-        
-        updateIAMProfileSourceReferences()
-        
-        // Sync profiles with history after changes
-        syncProfilesWithHistory()
-        
-        // Notify observers that profiles have been updated
-        NotificationCenter.default.post(
-            name: Notification.Name(Constants.Notifications.profilesUpdated),
-            object: nil
-        )
-    }
-    
+
     // MARK: - Profile Management
     func getProfiles() -> [AWSProfile] {
         guard let content = try? String(contentsOf: configFile, encoding: .utf8) else {
             return []
         }
-        
+
         var sessionBlocks: [String: [String: String]] = [:]
         var profileBlocks: [String: [String: String]] = [:]
         var profileIds: [String: String] = [:]
-        
+
         var currentBlockName: String? = nil
         var currentBlockType: String? = nil
         var currentProperties: [String: String] = [:]
-        
+
         func finishBlock() {
             guard let blockName = currentBlockName,
                   let blockType = currentBlockType else { return }
@@ -341,7 +111,7 @@ class ConfigManager {
                 sessionBlocks[blockName] = currentProperties
             } else if blockType == "profile" || blockType == "default" {
                 profileBlocks[blockName] = currentProperties
-                
+
                 // Extract ID if it exists
                 if let id = currentProperties["id"] {
                     profileIds[blockName] = id
@@ -351,15 +121,15 @@ class ConfigManager {
             currentBlockType = nil
             currentProperties.removeAll()
         }
-        
+
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
-            
+
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
                 finishBlock()
-                
+
                 let inside = trimmed.dropFirst().dropLast()
                 if inside == "default" {
                     currentBlockType = "default"
@@ -380,15 +150,15 @@ class ConfigManager {
                 }
             }
         }
-        
+
         finishBlock()
-        
+
         var profiles: [AWSProfile] = []
-        
+
         for (profileName, props) in profileBlocks {
             // Extract the ID for this profile
             let profileId = profileIds[profileName] ?? UUID().uuidString
-            
+
             if let roleArn = props["role_arn"] {
                 if let sourceProfile = props["source_profile"],
                    let ssoSession = props["sso_session"],
@@ -402,12 +172,12 @@ class ConfigManager {
                         output: props["output"] ?? "json"
                     )
                     profiles.append(iamProfile)
-                    
+
                     // Track this profile with its ID
                     if profileName != "default" {
                         // Get the source profile's ID for relationship tracking
                         let sourceProfileId = profileIds[sourceProfile]
-                        
+
                         // Track this IAM profile with its source relationship
                         ProfileHistoryManager.shared.trackProfile(
                             profileName,
@@ -423,13 +193,13 @@ class ConfigManager {
                       let roleName = props["sso_role_name"] else {
                     continue
                 }
-                
+
                 let sessionProps = sessionBlocks[sessionName] ?? [:]
                 guard let startUrl = sessionProps["sso_start_url"],
                       let ssoRegion = sessionProps["sso_region"] else {
                     continue
                 }
-                
+
                 let ssoProfile = SSOProfile(
                     name: profileName,
                     startUrl: startUrl,
@@ -439,7 +209,7 @@ class ConfigManager {
                     output: props["output"] ?? "json"
                 )
                 profiles.append(ssoProfile)
-                
+
                 // Track this profile with its ID
                 if profileName != "default" {
                     ProfileHistoryManager.shared.trackProfile(
@@ -450,12 +220,12 @@ class ConfigManager {
                 }
             }
         }
-        
+
         updateIAMProfileSourceReferences()
 
         return profiles
     }
-    
+
     func saveProfile(_ profile: SSOProfile) throws {
         guard profile.validate() else {
             throw ConfigError.invalidProfile
@@ -498,7 +268,7 @@ class ConfigManager {
         }
     }
 
-    
+
     func saveIAMProfile(_ profile: IAMProfile) throws {
         guard profile.validate() else {
             throw ConfigError.invalidProfile
@@ -511,12 +281,7 @@ class ConfigManager {
         let profileId = ProfileHistoryManager.shared.getIdForProfile(profile.name) ?? UUID().uuidString
 
         // Get the source profile's ID for relationship tracking
-        let sourceProfileId: String?
-        if profile.sourceProfile == "default" {
-            sourceProfileId = ProfileHistoryManager.shared.getDefaultProfileId()
-        } else {
-            sourceProfileId = ProfileHistoryManager.shared.getIdForProfile(profile.sourceProfile)
-        }
+        let sourceProfileId = ProfileHistoryManager.shared.getIdForProfile(profile.sourceProfile)
 
         // Track this IAM profile with its source relationship
         ProfileHistoryManager.shared.trackProfile(
@@ -552,18 +317,18 @@ class ConfigManager {
         updateIAMProfileSourceReferences()
     }
 
-    
+
     func deleteProfile(_ profileName: String) {
         guard let content = try? String(contentsOf: configFile, encoding: .utf8) else { return }
-        
+
         var newContent = removeBlock(named: profileName, type: "sso-session", from: content)
         newContent = removeBlock(named: profileName, type: "profile", from: newContent)
-        
+
         try? newContent.write(to: configFile, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
-        
+
     }
-    
+
     func clearCache() {
         do {
             // Check if the cache directory exists
@@ -574,11 +339,11 @@ class ConfigManager {
                     includingPropertiesForKeys: nil,
                     options: []
                 )
-                
+
                 for fileURL in cacheContents {
                     try FileManager.default.removeItem(at: fileURL)
                 }
-                
+
                 print("Cleared AWS CLI cache")
             } else {
                 // Create the cache directory if it doesn't exist
@@ -593,85 +358,78 @@ class ConfigManager {
             print("Error clearing AWS CLI cache: \(error)")
         }
     }
-    
+
     func fixAllProfileReferences() {
         updateIAMProfileSourceReferences()
         print("Fixed all IAM profile references")
     }
-    
+
     func updateIAMProfileSourceReferences() {
         guard let content = try? String(contentsOf: configFile, encoding: .utf8) else { return }
-        
+
         // Get all profile infos from history
         let allProfileInfos = ProfileHistoryManager.shared.getAllProfiles()
-        
-        // Find the default profile info
-        let _ = allProfileInfos.first(where: { $0.isDefault })
-        
+
         // Find all IAM profiles that might need updating
         let iamProfileInfos = allProfileInfos.filter { $0.profileType == .iam }
-        
+
         var updatedContent = content
-        
+
         // For each IAM profile
         for iamProfile in iamProfileInfos {
             guard let linkedToId = iamProfile.linkedToId,
                   let linkedProfile = allProfileInfos.first(where: { $0.id == linkedToId }) else {
                 continue
             }
-            
-            // Determine if this profile should reference "default" or the original name
-            let shouldUseDefault = linkedProfile.isDefault
-            let correctSourceProfile = shouldUseDefault ? "default" : linkedProfile.originalName
-            
+
             // Regex pattern to find this profile's block and source_profile line
             let profilePattern = "\\[profile \\s*\(iamProfile.originalName)\\s*\\](.*?)(?=\\[|$)"
             let sourceProfilePattern = "source_profile\\s*=\\s*[^\\n]+"
-            
+
             // Find the profile block
             if let regex = try? NSRegularExpression(pattern: profilePattern, options: [.dotMatchesLineSeparators]) {
                 let range = NSRange(updatedContent.startIndex..<updatedContent.endIndex, in: updatedContent)
-                
+
                 if let match = regex.firstMatch(in: updatedContent, options: [], range: range),
                    let blockRange = Range(match.range, in: updatedContent) {
                     let profileBlock = String(updatedContent[blockRange])
-                    
+
                     // Find and replace source_profile line
                     if let sourceRegex = try? NSRegularExpression(pattern: sourceProfilePattern, options: []) {
                         let sourceRange = NSRange(profileBlock.startIndex..<profileBlock.endIndex, in: profileBlock)
-                        
+
                         if let sourceMatch = sourceRegex.firstMatch(in: profileBlock, options: [], range: sourceRange),
                            let sourceMatchRange = Range(sourceMatch.range, in: profileBlock) {
                             // Create replacement block with updated source_profile
                             let updatedBlock = profileBlock.replacingCharacters(
                                 in: sourceMatchRange,
-                                with: "source_profile = \(correctSourceProfile)"
+                                with: "source_profile = \(linkedProfile.originalName)"
                             )
-                            
+
                             // Replace the entire block in the content
                             updatedContent = updatedContent.replacingCharacters(
                                 in: blockRange,
                                 with: updatedBlock
                             )
-                            
-                            print("Updated IAM profile \(iamProfile.originalName) to use source_profile = \(correctSourceProfile)")
+
+                            print("Updated IAM profile \(iamProfile.originalName) to use source_profile = \(linkedProfile.originalName)")
                         } else {
                             // If source_profile line doesn't exist, add it
                             let updatedBlock = profileBlock.trimmingCharacters(in: .whitespacesAndNewlines) +
-                                              "\nsource_profile = \(correctSourceProfile)\n"
-                            
+                                              "\nsource_profile = \(linkedProfile.originalName)\n"
+
                             updatedContent = updatedContent.replacingCharacters(
                                 in: blockRange,
                                 with: updatedBlock
                             )
-                            
-                            print("Added source_profile = \(correctSourceProfile) to IAM profile \(iamProfile.originalName)")
+
+                            print("Added source_profile = \(linkedProfile.originalName) to IAM profile \(iamProfile.originalName)")
                         }
                     }
                 }
             }
         }
-        
+
         // Write the updated content back if changed
         if updatedContent != content {
             do {
@@ -686,115 +444,99 @@ class ConfigManager {
         }
     }
     
-    private func updateRelationshipsForDefault(
-        profileName: String,
-        profileId: String?,
-        blocks: inout [String: [String]]
-    ) {
-        // Identify the profile ID of the new default profile
-        let newDefaultId = profileId ?? ProfileHistoryManager.shared.getIdForProfile(profileName)
-        
-        // Update profile_history.json to mark the new profile as default
-        if let id = newDefaultId {
-            ProfileHistoryManager.shared.setDefaultProfileById(id)
-        } else {
-            ProfileHistoryManager.shared.setDefaultProfile(profileName)
-        }
-        
-        // Get all profiles from history after updating the default
-        let allProfileInfos = ProfileHistoryManager.shared.getAllProfiles()
-        
-        // Find all IAM profiles
-        let iamProfileInfos = allProfileInfos.filter { $0.profileType == .iam }
-        
-        // Process each IAM profile
-        for iamProfileInfo in iamProfileInfos {
-            // Skip if no linked profile
-            guard let linkedToId = iamProfileInfo.linkedToId else { continue }
-            
-            // Find the linked profile info
-            guard let linkedProfileInfo = allProfileInfos.first(where: { $0.id == linkedToId }) else { continue }
-            
-            // Find this IAM profile in the blocks
-            let profileHeader = "[profile \(iamProfileInfo.originalName)]"
-            let profileContent = blocks[profileHeader] ?? []
-            
-            // Skip if profile doesn't exist in blocks
-            if profileContent.isEmpty { continue }
-            
-            // Create updated content with correct source_profile and sso_session
-            var updatedContent: [String] = []
-            var sourceProfileUpdated = false
-            var ssoSessionUpdated = false
-            
-            for line in profileContent {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                
-                if trimmed.hasPrefix("source_profile = ") {
-                    // If linked profile is default, use "default", otherwise use the original name
-                    if linkedProfileInfo.isDefault {
-                        updatedContent.append("source_profile = default")
-                    } else {
-                        updatedContent.append("source_profile = \(linkedProfileInfo.originalName)")
+    // Gets the SSO Session info for a profile
+    func getSSOSession(for profile: SSOProfile) -> (startUrl: String, region: String)? {
+        // Use the existing configFile property instead of configFilePath
+        do {
+            let configContent = try String(contentsOf: configFile, encoding: .utf8)
+            let lines = configContent.components(separatedBy: CharacterSet.newlines)
+
+            // Find the profile section
+            var inProfileSection = false
+            var ssoSessionName: String?
+
+            // First find the sso_session name
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: CharacterSet.whitespaces)
+
+                if trimmedLine == "[profile \(profile.name)]" {
+                    inProfileSection = true
+                    continue
+                } else if trimmedLine.hasPrefix("[") && inProfileSection {
+                    inProfileSection = false
+                    break
+                }
+
+                if inProfileSection && trimmedLine.hasPrefix("sso_session") {
+                    let parts = trimmedLine.components(separatedBy: "=")
+                    if parts.count > 1 {
+                        ssoSessionName = parts[1].trimmingCharacters(in: CharacterSet.whitespaces)
                     }
-                    sourceProfileUpdated = true
-                } else if trimmed.hasPrefix("sso_session = ") {
-                    // Always use the original name for sso_session, never "default"
-                    updatedContent.append("sso_session = \(linkedProfileInfo.originalName)")
-                    ssoSessionUpdated = true
-                } else {
-                    updatedContent.append(line)
+                    break
                 }
             }
-            
-            // If source_profile wasn't found, add it
-            if !sourceProfileUpdated {
-                if linkedProfileInfo.isDefault {
-                    updatedContent.append("source_profile = default")
-                } else {
-                    updatedContent.append("source_profile = \(linkedProfileInfo.originalName)")
+
+            // Now find the SSO session details
+            if let ssoSessionName = ssoSessionName {
+                var startUrl: String?
+                var region: String?
+                var inSessionSection = false
+
+                for line in lines {
+                    let trimmedLine = line.trimmingCharacters(in: CharacterSet.whitespaces)
+
+                    if trimmedLine == "[sso-session \(ssoSessionName)]" {
+                        inSessionSection = true
+                        continue
+                    } else if trimmedLine.hasPrefix("[") && inSessionSection {
+                        break
+                    }
+
+                    if inSessionSection {
+                        if trimmedLine.hasPrefix("sso_start_url") {
+                            let parts = trimmedLine.components(separatedBy: "=")
+                            if parts.count > 1 {
+                                startUrl = parts[1].trimmingCharacters(in: CharacterSet.whitespaces)
+                            }
+                        } else if trimmedLine.hasPrefix("sso_region") {
+                            let parts = trimmedLine.components(separatedBy: "=")
+                            if parts.count > 1 {
+                                region = parts[1].trimmingCharacters(in: CharacterSet.whitespaces)
+                            }
+                        }
+
+                        if startUrl != nil && region != nil {
+                            return (startUrl: startUrl!, region: region!)
+                        }
+                    }
                 }
             }
-            
-            // If sso_session wasn't found, add it
-            if !ssoSessionUpdated {
-                updatedContent.append("sso_session = \(linkedProfileInfo.originalName)")
+
+            // If no SSO session found and profile has startUrl & region, use those
+            if !profile.startUrl.isEmpty && !profile.region.isEmpty {
+                return (startUrl: profile.startUrl, region: profile.region)
             }
-            
-            // Update the block with the new content
-            blocks[profileHeader] = updatedContent
-            
-            // Debug output
-            print("Updated IAM profile \(iamProfileInfo.originalName):")
-            print("  Linked to: \(linkedProfileInfo.originalName) (isDefault: \(linkedProfileInfo.isDefault))")
-            print("  Updated source_profile to: \(linkedProfileInfo.isDefault ? "default" : linkedProfileInfo.originalName)")
-        }
-        
-        // Debug output of all blocks after updates
-        print("All blocks after updates:")
-        for (header, content) in blocks {
-            print("\(header):")
-            for line in content {
-                print("  \(line)")
-            }
-        }
-        
-        // Update profile_history.json to mark the new profile as default
-        if let newDefaultId = profileId ?? ProfileHistoryManager.shared.getIdForProfile(profileName) {
-            ProfileHistoryManager.shared.setDefaultProfileById(newDefaultId)
-        } else {
-            ProfileHistoryManager.shared.setDefaultProfile(profileName)
+
+            return nil
+        } catch {
+            print("Error reading config file: \(error)")
+            return nil
         }
     }
     
+    func getProfile(_ profileName: String) -> AWSProfile? {
+        let profiles = getProfiles()
+        return profiles.first(where: { $0.name == profileName })
+    }
+
     private func removeBlock(named blockName: String, type: String, from content: String) -> String {
         let lines = content.components(separatedBy: .newlines)
         var updated: [String] = []
         var skip = false
-        
+
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
+
             if trimmed.hasPrefix("[\(type) \(blockName)]") {
                 skip = true
                 continue
@@ -806,10 +548,10 @@ class ConfigManager {
                 updated.append(line)
             }
         }
-        
+
         return updated.joined(separator: "\n")
     }
-    
+
     func getSessionExpiration() -> Date? {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: cacheDirectory,
@@ -818,16 +560,16 @@ class ConfigManager {
         ) else {
             return nil
         }
-        
+
         let sortedFiles = files.filter { $0.pathExtension == "json" }
             .sorted { f1, f2 in
                 let d1 = (try? f1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let d2 = (try? f2.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return d1 > d2
             }
-        
+
         guard let latestFile = sortedFiles.first else { return nil }
-        
+
         do {
             let data = try Data(contentsOf: latestFile)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -877,12 +619,11 @@ struct IAMProfile: Codable {
     }
 }
 
-
 enum ConfigError: LocalizedError {
     case invalidProfile
     case fileWriteError
     case fileReadError
-    
+
     var errorDescription: String? {
         switch self {
         case .invalidProfile:

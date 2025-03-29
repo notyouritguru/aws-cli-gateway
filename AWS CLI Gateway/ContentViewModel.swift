@@ -28,6 +28,25 @@ class ContentViewModel: NSObject, ObservableObject {
         WindowManager.shared.showAddProfileWindow()
     }
     
+    @MainActor
+    func connectToProfile(_ profileName: String) {
+        // First update the UI
+        currentProfile = profileName  // Changed from selectedProfile to currentProfile
+        sessionStatus = Constants.Session.sessionActive
+
+        // Then mark the profile as connected
+        ProfileHistoryManager.shared.setConnectedProfile(profileName)
+
+        // Start session monitoring for this profile
+        SessionManager.shared.startMonitoring(for: profileName)
+
+        // Notify that profiles have been updated
+        NotificationCenter.default.post(
+            name: Notification.Name(Constants.Notifications.profilesUpdated),
+            object: nil
+        )
+    }
+
     // MARK: - Private Methods
     
     private func setupObservers() {

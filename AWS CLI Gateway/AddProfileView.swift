@@ -560,13 +560,7 @@ struct IAMRoleTab: View {
         var profileNames = ["-----"]
 
         for profile in profiles {
-            let displayName: String
-            if profile.name == "default" {
-                displayName = ProfileHistoryManager.shared.getDefaultProfileOriginalName() ?? profile.name
-            } else {
-                displayName = profile.name
-            }
-            profileNames.append(displayName)
+            profileNames.append(profile.name)
         }
 
         availableProfiles = profileNames
@@ -585,52 +579,20 @@ struct IAMRoleTab: View {
         // Get all profiles
         let allProfiles = ConfigManager.shared.getProfiles()
 
-        let defaultProfileOriginalName = ProfileHistoryManager.shared.getDefaultProfileOriginalName()
-
         // Find the source profile
-        let sourceProfileObject: SSOProfile?
-        if sourceProfile == defaultProfileOriginalName {
-            // If selected source is the default profile by its original name
-            sourceProfileObject = allProfiles
-                .first(where: { $0.name == "default" }) as? SSOProfile
-        } else if sourceProfile == "default" {
-            // If selected source is literally "default"
-            sourceProfileObject = allProfiles
-                .first(where: { $0.name == "default" }) as? SSOProfile
-        } else {
-            // Regular named profile
-            sourceProfileObject = allProfiles
-                .first(where: { $0.name == sourceProfile }) as? SSOProfile
-        }
+        let sourceProfileObject = allProfiles
+            .first(where: { $0.name == sourceProfile }) as? SSOProfile
 
         guard let sourceProfileObject = sourceProfileObject else {
             errorMessage = "Could not find the source profile"
             return
         }
 
-        // Determine the actual source profile name to use in the config
-        let actualSourceProfileName = sourceProfileObject.name == "default" ? "default" : sourceProfileObject.name
-
-        let ssoSessionName: String
-        if sourceProfileObject.name == "default" {
-            // For default profile, we need to find its sso_session from the config
-            if allProfiles.first(where: { $0.name == "default" }) is SSOProfile {
-                // Use the original profile name for the sso_session, never "default"
-                ssoSessionName = defaultProfileOriginalName ?? ""
-            } else {
-                // Fallback to the original name if we can't find it
-                ssoSessionName = defaultProfileOriginalName ?? sourceProfileObject.name
-            }
-        } else {
-            // For regular profiles, use the profile name as the sso_session
-            ssoSessionName = sourceProfileObject.name
-        }
-
-        // Create the IAM profile with explicit sso_session
+        // Create the IAM profile with the selected source profile
         let iamProfile = IAMProfile(
             name: selectedRole, // Use role name as profile name
-            sourceProfile: actualSourceProfileName,
-            ssoSession: ssoSessionName,  // Use the actual SSO session name, never "default"
+            sourceProfile: sourceProfile,
+            ssoSession: sourceProfile,  // Use the same name for sso_session
             roleArn: role.arn,
             region: sourceProfileObject.region,
             output: output
@@ -648,6 +610,7 @@ struct IAMRoleTab: View {
         }
     }
 }
+
 
 // MARK: - Add Role View
 struct AddRoleView: View {

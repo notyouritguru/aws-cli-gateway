@@ -22,8 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        // Fix any IAM profile references
         ConfigManager.shared.updateIAMProfileSourceReferences()
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        // Force save profile history before terminating
+        ProfileHistoryManager.shared.persistChanges()
     }
     
     // MARK: - Setup

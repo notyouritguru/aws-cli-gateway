@@ -16,10 +16,11 @@ enum Constants {
         static let awsCliCacheDirectory = awsConfigDirectory
             .appendingPathComponent("cli/cache")
 
+        // Fix: Use appName directly instead of Constants.appName
         static let appSupportDirectory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
-            .appendingPathComponent(Constants.appName)
+            .appendingPathComponent(appName)
 
         static let profilesStore = appSupportDirectory?
             .appendingPathComponent("profiles.json")
@@ -35,6 +36,7 @@ enum Constants {
         static let sessionRenewed = "com.awssso.gateway.sessionRenewed"
         static let profilesUpdated = "com.awssso.gateway.profilesUpdated"
         static let profileConnected = "com.awssso.gateway.profileConnected"
+        static let profilesUpdatedAlt = "ProfilesUpdated"
     }
 
     // MARK: - Notification Keys
@@ -137,5 +139,13 @@ enum Constants {
             "text",
             "table"
         ]
+    }
+    
+    struct Constants {
+
+        struct Notifications {
+            static let profilesUpdated = "ProfilesUpdated"
+            // Other notification constants...
+        }
     }
 }
