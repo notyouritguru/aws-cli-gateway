@@ -9,22 +9,50 @@ on:
 jobs:
   build:
     name: Build and analyse default scheme using xcodebuild command
-    runs-on: macos-latest
+    runs-on: macos-14  # Using macOS Sonoma with Xcode 15.x
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: List available Xcode versions
+        run: ls -la /Applications/ | grep Xcode
+
+      - name: Select latest Xcode version
+        run: |
+          LATEST_XCODE=$(ls -1 /Applications/ | grep "Xcode_" | sort -V | tail -n 1)
+          if [ -n "$LATEST_XCODE" ]; then
+            echo "Using Xcode: $LATEST_XCODE"
+            sudo xcode-select -s /Applications/$LATEST_XCODE
+          else
+            echo "Using default Xcode installation"
+          fi
+          xcodebuild -version
+
       - name: Set Default Scheme
         run: |
           scheme_list=$(xcodebuild -list -json | tr -d "\n")
           default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
           echo $default | cat >default
           echo Using default scheme: $default
+
       - name: Build
         env:
           scheme: ${{ 'default' }}
         run: |
           if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
+
+          # Determine if we're working with workspace or project
+          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then 
+            filetype_parameter="workspace" 
+            file_to_build="`ls -A | grep -i \\.xcworkspace\$`"
+          else 
+            filetype_parameter="project" 
+            file_to_build="`ls -A | grep -i \\.xcodeproj\$`"
+          fi
+
           file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
+          echo "Building $filetype_parameter: $file_to_build with scheme: $scheme"
+
+          # Run xcodebuild with analytics and pipe through xcpretty
           xcodebuild clean build analyze -scheme "$scheme" -"$filetype_parameter" "$file_to_build" | xcpretty && exit ${PIPESTATUS[0]}
