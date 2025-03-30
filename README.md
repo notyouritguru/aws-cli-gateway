@@ -130,7 +130,7 @@ The ```gateway``` command automatically uses whichever profile is currently conn
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please reach out if you'd like to contribute to this project.
 
 ## Future Features/Ideas
 
