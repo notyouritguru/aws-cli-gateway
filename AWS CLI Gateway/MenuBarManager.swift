@@ -1,16 +1,201 @@
 import SwiftUI
 import Cocoa
 
+
+class HighlightableMenuItemView: NSView {
+    private let backgroundLayer = CALayer()
+    private var highlightObserver: NSKeyValueObservation?
+    private var trackingArea: NSTrackingArea?
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupView()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+    
+    func refreshTracking() {
+        print("🔍 DIAG: refreshTracking called for \(enclosingMenuItem?.title ?? "unknown item")")
+        // Remove existing tracking area
+        if let existing = trackingArea {
+            print("🔍 DIAG: Removing existing tracking area")
+            removeTrackingArea(existing)
+        } else {
+            print("🔍 DIAG: No existing tracking area found")
+        }
+        
+        // Create and add a new tracking area
+        print("🔍 DIAG: New tracking area added")
+        trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        
+        if let area = trackingArea {
+            addTrackingArea(area)
+        }
+        
+        // Ensure we're observing the menu item
+        if let menuItem = enclosingMenuItem {
+            print("🔍 DIAG: Highlight observer is \(highlightObserver == nil ? "nil" : "not nil")")
+            // Ensure highlight observer is set up
+            if highlightObserver == nil {
+                print("🔍 DIAG: Highlight observer \(highlightObserver == nil ? "not" : "") created")
+                highlightObserver = menuItem.observe(\.isHighlighted, options: [.new]) { [weak self] menuItem, _ in
+                    guard let self = self else { return }
+                    
+                    if menuItem.isHighlighted {
+                        self.backgroundLayer.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+                    } else {
+                        self.backgroundLayer.backgroundColor = NSColor.clear.cgColor
+                    }
+                }
+            }
+        }
+    }
+    
+    // In HighlightableMenuItemView class, outside any methods
+    func updateHighlightState() {
+        // Update the view based on its menu item's highlight state
+        if let menuItem = enclosingMenuItem {
+            updateBackgroundColor(isHighlighted: menuItem.isHighlighted)
+        }
+    }
+    
+    private func updateBackgroundColor(isHighlighted: Bool) {
+        // Your existing highlighting code
+        if isHighlighted {
+            layer?.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+
+    private func setupView() {
+        wantsLayer = true
+
+        backgroundLayer.frame = bounds
+        backgroundLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        backgroundLayer.backgroundColor = NSColor.clear.cgColor
+
+        // Add rounded corners to match macOS 15 style
+        backgroundLayer.cornerRadius = 6
+        backgroundLayer.masksToBounds = true
+
+        // Create horizontal-only insets
+        let horizontalInset: CGFloat = 4
+        let originalFrame = bounds
+
+        // Create a new frame with horizontal insets only
+        let insetFrame = CGRect(
+            x: originalFrame.origin.x + horizontalInset,
+            y: originalFrame.origin.y,
+            width: originalFrame.width - (horizontalInset * 2),
+            height: originalFrame.height
+        )
+
+        backgroundLayer.frame = insetFrame
+
+        if let hostLayer = layer {
+            hostLayer.insertSublayer(backgroundLayer, at: 0)
+        }
+
+        // Add tracking area to handle mouse events directly
+        setupTrackingArea()
+    }
+
+
+    private func setupTrackingArea() {
+        if let existingArea = trackingArea {
+            removeTrackingArea(existingArea)
+        }
+
+        trackingArea = NSTrackingArea(rect: bounds,
+                                      options: [.mouseEnteredAndExited, .activeInActiveApp],
+                                      owner: self,
+                                      userInfo: nil)
+
+        if let area = trackingArea {
+            addTrackingArea(area)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        setupTrackingArea()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        print("🔍 DIAG: mouseEntered for \(enclosingMenuItem?.title ?? "unknown item")")
+        super.mouseEntered(with: event)
+        setHighlighted(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        print("🔍 DIAG: mouseExited for \(enclosingMenuItem?.title ?? "unknown item")")
+        super.mouseExited(with: event)
+        setHighlighted(false)
+    }
+
+    func setHighlighted(_ highlighted: Bool) {
+        // Use layer's draw immediately functionality
+        if highlighted {
+            backgroundLayer.actions = [
+                "backgroundColor": NSNull()
+            ]
+            backgroundLayer.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+        } else {
+            backgroundLayer.actions = [
+                "backgroundColor": NSNull()
+            ]
+            backgroundLayer.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        print("🔍 DIAG: viewDidMoveToWindow for \(enclosingMenuItem?.title ?? "unknown item")")
+        super.viewDidMoveToWindow()
+    }
+
+    override func viewDidMoveToSuperview() {
+        print("🔍 DIAG: viewDidMoveToSuperview for \(enclosingMenuItem?.title ?? "unknown item")")
+        super.viewDidMoveToSuperview()
+
+        if let menuItem = enclosingMenuItem {
+            menuItem.isEnabled = true
+
+            highlightObserver = menuItem.observe(\.isHighlighted, options: [.new]) { [weak self] menuItem, _ in
+                guard let self = self else { return }
+
+                self.setHighlighted(menuItem.isHighlighted)
+            }
+        }
+    }
+
+    deinit {
+        highlightObserver?.invalidate()
+        if let area = trackingArea {
+            removeTrackingArea(area)
+        }
+    }
+}
+
 class ProfileButton: NSButton {
     var profile: AWSProfile?
 }
 
-class MenuBarManager {
+class MenuBarManager: NSObject, NSMenuDelegate {
     static let shared = MenuBarManager()
 
     // MARK: - Menubar & Menu
     private var statusItem: NSStatusItem?
     private var mainMenu: NSMenu!
+    private var highlightTimer: Timer?
 
     // Menu items
     private var connectionsMenuItem: NSMenuItem!
@@ -38,8 +223,94 @@ class MenuBarManager {
         }
     }
 
-    private init() {}
+    private override init() {}
+    
+    func menuWillOpen(_ menu: NSMenu) {
+        print("🔍 DIAG: menuWillOpen called for \(menu == mainMenu ? "main menu" : "submenu")")
+        // This will be called whenever the menu is about to be displayed
+        if menu == mainMenu || menu == connectionsMenuItem?.submenu {
+            // Reinitialize tracking for all custom views
+            reinitializeMenuItemViews(in: menu)
+        }
+        highlightTimer?.invalidate() // Safety cleanup
+        highlightTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.updateHighlightsBasedOnMousePosition()
+        }
 
+        // Add the timer to the main run loop to ensure it works in menu context
+        if let timer = highlightTimer {
+            RunLoop.main.add(timer, forMode: .eventTracking)
+        }
+    }
+    
+    func menuDidClose(_ menu: NSMenu) {
+        // Stop the timer when menu closes
+        highlightTimer?.invalidate()
+        highlightTimer = nil
+    }
+    
+    
+    private func updateHighlightsBasedOnMousePosition() {
+        guard let menu = statusItem?.menu else { return }
+        let mouseLocation = NSEvent.mouseLocation
+
+        // Reset all highlights first (optional)
+        resetAllHighlights(in: menu)
+
+        // Process menu items for highlighting
+        processMenuItemsForHighlighting(in: menu, mouseLocation: mouseLocation)
+    }
+
+    private func resetAllHighlights(in menu: NSMenu) {
+        for item in menu.items {
+            if let view = item.view as? HighlightableMenuItemView {
+                view.setHighlighted(false) // Use existing method instead
+            }
+
+            if let submenu = item.submenu {
+                resetAllHighlights(in: submenu)
+            }
+        }
+    }
+    
+    private func processMenuItemsForHighlighting(in menu: NSMenu, mouseLocation: NSPoint) {
+        for item in menu.items {
+            if let view = item.view as? HighlightableMenuItemView {
+                // Convert view's frame to screen coordinates
+                if let window = view.window {
+                    let frameInWindow = view.convert(view.bounds, to: nil)
+                    let frameInScreen = window.convertToScreen(frameInWindow)
+
+                    let shouldHighlight = frameInScreen.contains(mouseLocation)
+
+                    // Directly update the view instead of changing isHighlighted
+                    view.setHighlighted(shouldHighlight)
+                }
+            }
+
+            // Process submenu if it has items
+            if let submenu = item.submenu, submenu.numberOfItems > 0 {
+                processMenuItemsForHighlighting(in: submenu, mouseLocation: mouseLocation)
+            }
+        }
+    }
+
+    private func reinitializeMenuItemViews(in menu: NSMenu) {
+        print("🔍 DIAG: Reinitializing \(menu.items.count) menu items")
+        for menuItem in menu.items {
+            // Process this item's view if it's a HighlightableMenuItemView
+            if let itemView = menuItem.view as? HighlightableMenuItemView {
+                // Tell the view to refresh its tracking areas and highlight state
+                itemView.refreshTracking()
+            }
+
+            // Recursively process submenu items
+            if let submenu = menuItem.submenu {
+                reinitializeMenuItemViews(in: submenu)
+            }
+        }
+    }
+    
     // MARK: - Setup
 
     func setup() {
@@ -52,6 +323,7 @@ class MenuBarManager {
             }
             
             mainMenu = NSMenu()
+            mainMenu.delegate = self
             statusItem?.menu = mainMenu
             
             setupNotifications()
@@ -99,23 +371,38 @@ class MenuBarManager {
 
     // MARK: - Build the Dropdown
 
+
     @MainActor
     @objc private func buildMenu() {
         let currentSessionTime = sessionMenuItem?.title ?? "Session: --:--:--"
         mainMenu.removeAllItems()
 
         let connectionsSubMenu = NSMenu()
-        let profiles = ConfigManager.shared.getProfiles()
+        var profiles = ConfigManager.shared.getProfiles()
+        
+        profiles.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
+        // Calculate the maximum width needed for the profile names
+        var maxProfileWidth: CGFloat = 50 // Minimum width
+
+        // Get widths for all profile names
+        for profile in profiles {
+            let nameWidth = calculateTextWidth(profile.displayName, withFont: NSFont.systemFont(ofSize: NSFont.systemFontSize))
+            maxProfileWidth = max(maxProfileWidth, nameWidth)
+        }
+
+        // Calculate total item width with some padding
+        let totalItemWidth = maxProfileWidth + 80 // 30 for star + 25 for delete + 25 padding
 
         if profiles.isEmpty {
             let noProfilesItem = NSMenuItem(title: "No Profiles Available", action: nil, keyEquivalent: "")
             connectionsSubMenu.addItem(noProfilesItem)
         } else {
             for profile in profiles {
-                let itemView = NSView(frame: NSRect(x: 0, y: 0, width: 175, height: Constants.UI.menuItemHeight))
+                let itemView = HighlightableMenuItemView(frame: NSRect(x: 0, y: 0, width: totalItemWidth, height: Constants.UI.menuItemHeight))
 
                 // Create star button instead of the checkmark
-                let starButton = ProfileButton(frame: NSRect(x: 0, y: 0, width: 16, height: Constants.UI.menuItemHeight))
+                let starButton = ProfileButton(frame: NSRect(x: 5, y: 0, width: 25, height: Constants.UI.menuItemHeight))
                 starButton.profile = profile
                 starButton.target = self
                 starButton.action = #selector(toggleProfileConnection(_:))
@@ -136,7 +423,7 @@ class MenuBarManager {
                 }
 
                 // Use the profile's displayName property which already handles the default case
-                let profileButton = ProfileButton(frame: NSRect(x: 20, y: 0, width: 115, height: Constants.UI.menuItemHeight))
+                let profileButton = ProfileButton(frame: NSRect(x: 30, y: 0, width: maxProfileWidth, height: Constants.UI.menuItemHeight))
                 profileButton.title = profile.displayName
                 profileButton.target = self
                 profileButton.action = #selector(showProfileDetails(_:))
@@ -146,8 +433,8 @@ class MenuBarManager {
                 profileButton.profile = profile
                 profileButton.alignment = .left
 
-                // Reposition the delete button to the far right
-                let deleteButton = ProfileButton(frame: NSRect(x: 155, y: 0, width: 20, height: Constants.UI.menuItemHeight))
+                // Position delete button relative to profile width
+                let deleteButton = ProfileButton(frame: NSRect(x: totalItemWidth - 30, y: 0, width: 25, height: Constants.UI.menuItemHeight))
                 deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete")
                 deleteButton.bezelStyle = .inline
                 deleteButton.isBordered = false
@@ -161,31 +448,40 @@ class MenuBarManager {
 
                 let menuItem = NSMenuItem()
                 menuItem.view = itemView
+                menuItem.isEnabled = true
                 connectionsSubMenu.addItem(menuItem)
             }
         }
 
-        connectionsMenuItem = NSMenuItem(title: "Connections", action: nil, keyEquivalent: "")
-        connectionsMenuItem.submenu = connectionsSubMenu
-        mainMenu.addItem(connectionsMenuItem)
+        // Use maximum of totalItemWidth or 250 for the menu width
+        let menuWidth = max(totalItemWidth, 250)
 
         if activeProfile != nil {
             mainMenu.addItem(NSMenuItem.separator())
 
-            renewMenuItem = NSMenuItem(title: "Renew Session", action: #selector(renewSession), keyEquivalent: "")
-            renewMenuItem.target = self
-            mainMenu.addItem(renewMenuItem)
-
-            disconnectMenuItem = NSMenuItem(title: "Disconnect", action: #selector(disconnectProfile), keyEquivalent: "")
-            disconnectMenuItem.target = self
-            mainMenu.addItem(disconnectMenuItem)
-
             let menuItem = NSMenuItem()
-            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 250, height: 50))
+
+            // Create main container with horizontal insets
+            let horizontalInset: CGFloat = 8 // Adjust this value as needed
+            let containerWidth = menuWidth - (horizontalInset * 2)
+            let containerView = NSView(frame: NSRect(x: horizontalInset, y: 0, width: containerWidth, height: 40))
+
+            // Add rounded corners and background
             containerView.wantsLayer = true
             containerView.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.2).cgColor
+            containerView.layer?.cornerRadius = 6
+            containerView.layer?.masksToBounds = true
 
-            let customView = NSTextField(frame: NSRect(x: 0, y: 0, width: 175, height: 50))
+            // Create a background frame that spans the entire menu item width
+            let outerContainer = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 40))
+            outerContainer.wantsLayer = true
+            outerContainer.layer?.backgroundColor = NSColor.clear.cgColor
+
+            // Add the rounded container to the outer container
+            outerContainer.addSubview(containerView)
+
+            // Set up the text field to match the new container size
+            let customView = NSTextField(frame: NSRect(x: 0, y: 0, width: containerWidth, height: 40))
             customView.stringValue = currentSessionTime
             customView.isEditable = false
             customView.isBordered = false
@@ -202,21 +498,39 @@ class MenuBarManager {
             customView.centerTextVertically()
 
             containerView.addSubview(customView)
-            menuItem.view = containerView
+            menuItem.view = outerContainer
             sessionMenuItem = menuItem
             mainMenu.addItem(sessionMenuItem)
 
             SessionManager.shared.onSessionUpdate = { [weak self] timeString in
                 DispatchQueue.main.async {
-                    if let container = self?.sessionMenuItem?.view,
+                    if let outerContainer = self?.sessionMenuItem?.view,
+                       let container = outerContainer.subviews.first,
                        let textField = container.subviews.first as? NSTextField {
                         textField.stringValue = timeString
                     }
                 }
             }
-
+            
             mainMenu.addItem(NSMenuItem.separator())
+                        
+            renewMenuItem = NSMenuItem(title: "Renew Session", action: #selector(renewSession), keyEquivalent: "")
+            renewMenuItem.target = self
+            mainMenu.addItem(renewMenuItem)
+
+            disconnectMenuItem = NSMenuItem(title: "Disconnect", action: #selector(disconnectProfile), keyEquivalent: "")
+            disconnectMenuItem.target = self
+            mainMenu.addItem(disconnectMenuItem)
+            
+            mainMenu.addItem(NSMenuItem.separator())
+
         }
+        
+        connectionsMenuItem = NSMenuItem(title: "Connections", action: nil, keyEquivalent: "")
+        connectionsMenuItem.submenu = connectionsSubMenu
+        mainMenu.addItem(connectionsMenuItem)
+        
+        mainMenu.addItem(NSMenuItem.separator())
 
         let addProfileItem = NSMenuItem(title: "Add Profile...", action: #selector(showAddProfile), keyEquivalent: "n")
         addProfileItem.target = self
@@ -432,20 +746,32 @@ class MenuBarManager {
 
     @MainActor
     @objc private func clearCache() {
-        SessionManager.shared.cleanDisconnect()
-        ConfigManager.shared.clearCache()
+        do {
+            let message = try ScriptManager.shared.clearAWSCache()
 
-        // Clear the connected profile
-        ProfileHistoryManager.shared.clearConnectedProfile()
-
-        activeProfile = nil
+            // Show success feedback
+            let alert = NSAlert()
+            alert.messageText = "Cache Cleared"
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch {
+            // Show error feedback
+            let alert = NSAlert()
+            alert.messageText = "Operation Failed"
+            alert.informativeText = "Failed to clear cache: \(error.localizedDescription)"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     @MainActor
     @objc private func installCLI() {
         // Show a confirmation dialog first
         let confirmAlert = NSAlert()
-        confirmAlert.messageText = "Install Terminal Command"
+        confirmAlert.messageText = "Install CLI Companion"
         confirmAlert.informativeText = "This will install the 'gateway' command to /usr/local/bin. Continue?"
         confirmAlert.alertStyle = .informational
         confirmAlert.addButton(withTitle: "Install")
@@ -456,231 +782,50 @@ class MenuBarManager {
             return // User canceled
         }
 
-        // Perform installation directly without accessing AppDelegate
-        installGatewayCommand()
-    }
-
-    private func installGatewayCommand() {
+        // Use ScriptManager to install the command
         do {
-            // Create a simplified gateway script with better formatting
-            let scriptContent = """
-    #!/bin/bash
+            let message = try ScriptManager.shared.installGatewayCommand()
 
-    # Configuration
-    PROFILE_HISTORY="$HOME/Library/Application Support/AWS CLI Gateway/profile_history.json"
-    AWS_CONFIG="$HOME/.aws/config"
-    AWS_CMD="/usr/local/bin/aws"
-
-    # Debug function - call this when troubleshooting
-    function debug_info() {
-        echo "=== DEBUG INFO ==="
-        echo "Script version: 1.2.0"
-        echo "Profile history path: $PROFILE_HISTORY"
-        echo "Profile history exists: $([ -f "$PROFILE_HISTORY" ] && echo "Yes" || echo "No")"
-        if [ -f "$PROFILE_HISTORY" ]; then
-            echo "Profile history content:"
-            cat "$PROFILE_HISTORY" 2>/dev/null || echo "File not readable"
-        fi
-        echo "AWS config path: $AWS_CONFIG"
-        echo "AWS config exists: $([ -f "$AWS_CONFIG" ] && echo "Yes" || echo "No")"
-        echo "AWS CLI path: $AWS_CMD"
-        echo "AWS CLI exists: $([ -x "$AWS_CMD" ] && echo "Yes" || echo "No")"
-        echo "==================="
-    }
-
-    # Ensure required files exist
-    function check_requirements() {
-        if [ ! -f "$PROFILE_HISTORY" ]; then
-            echo "Error: Profile history file not found at: $PROFILE_HISTORY"
-            echo "Please run AWS CLI Gateway app first."
-            exit 1
-        fi
-
-        if [ ! -f "$AWS_CONFIG" ]; then
-            echo "Error: AWS config file not found at $AWS_CONFIG"
-            exit 1
-        fi
-
-        if [ ! -x "$AWS_CMD" ]; then
-            echo "Error: AWS CLI not found at $AWS_CMD"
-            exit 1
-        fi
-    }
-
-    # Get active profile using Python for proper JSON parsing
-    function get_active_profile() {
-        # Use Python to properly parse the JSON and extract the connected profile
-        PROFILE=$(python3 -c "
-    import json, sys
-    try:
-        with open('$PROFILE_HISTORY', 'r') as f:
-            data = json.load(f)
-
-        # First try to find connected profile
-        connected_profile = None
-        for profile in data:
-            if profile.get('isConnected', False) == True:
-                connected_profile = profile.get('originalName')
-                break
-
-        # If no connected profile, try default
-        if not connected_profile:
-            for profile in data:
-                if profile.get('isDefault', False) == True:
-                    connected_profile = profile.get('originalName')
-                    break
-
-        # Last resort - first profile
-        if not connected_profile and data:
-            connected_profile = data[0].get('originalName')
-
-        if connected_profile:
-            print(connected_profile)
-        else:
-            sys.stderr.write('Error: No profiles found in $PROFILE_HISTORY\\n')
-            sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f'Error reading profile: {str(e)}\\n')
-        sys.exit(1)
-    ")
-
-        echo "$PROFILE"
-    }
-
-    # List all profiles of a specific type
-    function list_profiles() {
-        local TYPE=$1
-
-        echo "Available $TYPE profiles:"
-        echo "------------------------"
-
-        if [ "$TYPE" == "sso" ]; then
-            grep -B 1 -A 10 '\\[profile' "$AWS_CONFIG" | 
-            grep -v 'role_arn' | 
-            grep -A 1 'sso_' | 
-            grep '\\[profile' | 
-            sed 's/\\[profile \\(.*\\)\\]/\\1/'
-        elif [ "$TYPE" == "role" ] || [ "$TYPE" == "iam" ]; then
-            grep -B 1 -A 10 '\\[profile' "$AWS_CONFIG" | 
-            grep -B 1 'role_arn' | 
-            grep '\\[profile' | 
-            sed 's/\\[profile \\(.*\\)\\]/\\1/'
-        else
-            grep '\\[profile' "$AWS_CONFIG" | 
-            sed 's/\\[profile \\(.*\\)\\]/\\1/'
-        fi
-    }
-
-    # Show help message
-    function show_help() {
-        echo "AWS CLI Gateway - Command Line Interface"
-        echo ""
-        echo "USAGE:"
-        echo "  gateway [COMMAND] [ARGS...]"
-        echo ""
-        echo "COMMANDS:"
-        echo "  list sso                  List all SSO profiles"
-        echo "  list role                 List all IAM role profiles" 
-        echo "  list                      List all profiles"
-        echo "  debug                     Show debug information"
-        echo "  help                      Show this help message"
-        echo ""
-        echo "EXAMPLES:"
-        echo "  gateway s3 ls             Run 'aws s3 ls' with current profile"
-        echo "  gateway list sso          List all SSO profiles"
-        echo ""
-        echo "Any command not recognized as a gateway command will be passed to the AWS CLI"
-        echo "with the current profile automatically added."
-    }
-
-    # Main execution
-    check_requirements
-
-    # Process commands
-    case "$1" in
-        "list")
-            if [ "$2" == "sso" ] || [ "$2" == "role" ] || [ "$2" == "iam" ]; then
-                list_profiles "$2"
-            else
-                list_profiles "all"
-            fi
-            ;;
-        "help")
-            show_help
-            ;;
-        "debug")
-            debug_info
-            ;;
-        "")
-            show_help
-            ;;
-        *)
-            # Not a gateway command, pass to AWS CLI
-            PROFILE=$(get_active_profile)
-            echo "Using profile: $PROFILE" >&2
-
-            # Check if --profile is already specified
-            if [[ "$*" == *"--profile"* ]]; then
-                $AWS_CMD "$@" 
-            else
-                $AWS_CMD "$@" --profile "$PROFILE"
-            fi
-            ;;
-    esac
-
-    """
-
-                // Create a temporary file for the script
-                let tempDirectory = FileManager.default.temporaryDirectory
-                let scriptPath = tempDirectory.appendingPathComponent("gateway-script.sh")
-
-                // Write script content to the temporary file
-                try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
-
-                let destinationPath = "/usr/local/bin/gateway"
-
-                // Create the AppleScript with proper quoting
-                let script = """
-                do shell script "mkdir -p /usr/local/bin && cp '\(scriptPath.path)' '\(destinationPath)' && chmod +x '\(destinationPath)'" with administrator privileges
-                """
-
-                let task = Process()
-                task.launchPath = "/usr/bin/osascript"
-                task.arguments = ["-e", script]
-
-                let outputPipe = Pipe()
-                let errorPipe = Pipe()
-                task.standardOutput = outputPipe
-                task.standardError = errorPipe
-
-                try task.run()
-                task.waitUntilExit()
-
-                if task.terminationStatus != 0 {
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                    throw NSError(domain: "MenuBarManager", code: Int(task.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: "Installation failed: \(errorOutput)"])
-                }
-
-                // Show success feedback
-                let alert = NSAlert()
-                alert.messageText = "Terminal Command Installation"
-                alert.informativeText = "The 'gateway' command has been installed. You can now use it in Terminal with commands like 'gateway s3 ls'."
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            } catch {
-                // Show error feedback
-                let alert = NSAlert()
-                alert.messageText = "Installation Failed"
-                alert.informativeText = "Failed to install the gateway command: \(error.localizedDescription)"
-                alert.alertStyle = .critical
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
+            // Show success feedback
+            let alert = NSAlert()
+            alert.messageText = "Terminal Command Installation"
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch {
+            // Show error feedback
+            let alert = NSAlert()
+            alert.messageText = "Installation Failed"
+            alert.informativeText = "Failed to install the gateway command: \(error.localizedDescription)"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
+    }
 
+
+    @objc private func installGatewayCommand() {
+        do {
+            let message = try ScriptManager.shared.installGatewayCommand()
+
+            // Show success feedback
+            let alert = NSAlert()
+            alert.messageText = "Terminal Command Installation"
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch {
+            // Show error feedback
+            let alert = NSAlert()
+            alert.messageText = "Installation Failed"
+            alert.informativeText = "Failed to install the gateway command: \(error.localizedDescription)"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+    }
 
     // MARK: - Notification Handlers
 
@@ -719,6 +864,12 @@ class MenuBarManager {
         alert.alertStyle = .critical
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+    
+    private func calculateTextWidth(_ text: String, withFont font: NSFont) -> CGFloat {
+        let attributes = [NSAttributedString.Key.font: font]
+        let size = (text as NSString).size(withAttributes: attributes)
+        return size.width + 10
     }
 }
 
