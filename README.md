@@ -8,7 +8,13 @@
 
 A menu bar macOS application that simplifies the management of AWS profiles and sessions, with a focus on AWS SSO.
 
-## What's New in Version 0.2.0
+## What's New in Version 0.3.0
+
+- **Improved Code Architecture**: Refactored script management into a dedicated manager for better performance
+- **UI Refinements**: Enhanced menu bar experience with more responsive elements
+- **Stability Improvements**: Fixed issues with session management and terminal command handling
+
+### Version 0.2.0 Release Notes
 
 - **Terminal Integration**: The new ```gateway``` command lets you run AWS CLI commands using your connected profile <br> without specifying ```--profile``` every time
 - **Connected Profile**: Simplified workflow that automatically uses your connected profile in terminal commands
@@ -143,3 +149,4 @@ Contributions are welcome! Please reach out if you'd like to contribute to this 
 - **Enhanced Terminal Integration**:
     - **Custom Commands**: Create aliases for complex AWS CLI commands
     - **Auto-Completion**: Context-aware command completion
+- **AWS CLI Config File Management**:

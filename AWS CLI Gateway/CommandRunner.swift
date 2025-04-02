@@ -2,90 +2,82 @@ import Foundation
 
 class CommandRunner {
     static let shared = CommandRunner()
-    
-    private init() {}
-    
+
+    // Cache the AWS CLI path
+    private let awsCliPath: String
+
+    private init() {
+        // Find AWS CLI path once at initialization
+        let paths = ["/usr/local/bin/aws", "/opt/homebrew/bin/aws", "/usr/bin/aws"]
+        self.awsCliPath = paths.first { FileManager.default.fileExists(atPath: $0) } ?? "/usr/local/bin/aws"
+        print("CommandRunner: Using AWS CLI at: \(self.awsCliPath)")
+    }
+
     func runCommand(_ command: String, args: [String]) async throws -> String {
+        // Early feedback for UI responsiveness
+        print("Preparing command: \(command) \(args.joined(separator: " "))")
+
+        // Create the process
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/local/bin/\(command)")
+        let executablePath = command == "aws" ? self.awsCliPath : "/usr/local/bin/\(command)"
+        process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = args
-        
+
+        // Set up pipes for output
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
-        
-        // Store data from multiple threads safely using this queue
-        let dataQueue = DispatchQueue(label: "com.yourapp.commandrunner.data")
-        
-        var collectedStdout = Data()
-        var collectedStderr = Data()
-        
-        // Print + accumulate output in real-time
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty {
-                dataQueue.sync {
-                    collectedStdout.append(data)
-                }
-                if let output = String(data: data, encoding: .utf8) {
-                    print(output)
-                }
-            }
-        }
-        
-        // Print + accumulate error in real-time
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty {
-                dataQueue.sync {
-                    collectedStderr.append(data)
-                }
-                if let output = String(data: data, encoding: .utf8) {
-                    print(output)
-                }
-            }
-        }
-        
+
+        // Start the process
         print("Running command: \(command) \(args.joined(separator: " "))")
-        
         try process.run()
+
+        // Create a separate task to read output while the process runs
+        // This avoids concurrency issues and Swift 6 warnings
+        let outputTask = Task.detached {
+            let outputHandle = outputPipe.fileHandleForReading
+            var output = ""
+
+            repeat {
+                let data = outputHandle.availableData
+                if data.isEmpty { break }
+
+                if let str = String(data: data, encoding: .utf8) {
+                    print(str)
+                    output += str
+                }
+            } while true
+
+            return output
+        }
+
+        // Same for error output
+        let errorTask = Task.detached {
+            let errorHandle = errorPipe.fileHandleForReading
+            var errorOutput = ""
+
+            repeat {
+                let data = errorHandle.availableData
+                if data.isEmpty { break }
+
+                if let str = String(data: data, encoding: .utf8) {
+                    print("Error: \(str)")
+                    errorOutput += str
+                }
+            } while true
+
+            return errorOutput
+        }
+
+        // Wait for process to complete
         process.waitUntilExit()
-        
-        // Stop read handlers
-        outputPipe.fileHandleForReading.readabilityHandler = nil
-        errorPipe.fileHandleForReading.readabilityHandler = nil
-        
-        // Read any leftover data, appending under the lock
-        let leftoverStdout = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        if !leftoverStdout.isEmpty {
-            dataQueue.sync {
-                collectedStdout.append(leftoverStdout)
-            }
-            if let leftoverString = String(data: leftoverStdout, encoding: .utf8) {
-                print(leftoverString)
-            }
-        }
-        
-        let leftoverStderr = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        if !leftoverStderr.isEmpty {
-            dataQueue.sync {
-                collectedStderr.append(leftoverStderr)
-            }
-            if let leftoverString = String(data: leftoverStderr, encoding: .utf8) {
-                print(leftoverString)
-            }
-        }
-        
-        // Convert final data to strings
-        let outputString: String = dataQueue.sync {
-            String(data: collectedStdout, encoding: .utf8) ?? ""
-        }
-        let errorString: String = dataQueue.sync {
-            String(data: collectedStderr, encoding: .utf8) ?? ""
-        }
-        
-        // If the process errored, throw
+
+        // Get results from our detached tasks
+        let outputString = await outputTask.value
+        let errorString = await errorTask.value
+
+        // Check exit status
         if process.terminationStatus != 0 {
             throw NSError(
                 domain: "CommandRunner",
@@ -96,32 +88,19 @@ class CommandRunner {
                 ]
             )
         }
-        
-        // Return stdout
+
         return outputString
     }
-    
+
     func login(profileName: String, completion: @escaping (Bool) -> Void) {
-        let command = "aws sso login --profile \(profileName)"
-
-        let task = Process()
-        task.launchPath = "/bin/zsh"
-        task.arguments = ["-c", command]
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        task.standardOutput = outputPipe
-        task.standardError = errorPipe
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-
-            let success = task.terminationStatus == 0
-            completion(success)
-        } catch {
-            print("Error launching process: \(error)")
-            completion(false)
+        Task {
+            do {
+                _ = try await runCommand("aws", args: ["sso", "login", "--profile", profileName])
+                completion(true)
+            } catch {
+                print("Login error: \(error)")
+                completion(false)
+            }
         }
     }
 }

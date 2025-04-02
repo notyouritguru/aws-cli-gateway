@@ -524,6 +524,44 @@ class ConfigManager {
         }
     }
     
+    func getSSOSessionName(for profileName: String) -> String? {
+        guard getProfile(profileName) is SSOProfile else {
+            return nil
+        }
+
+        do {
+            let configContent = try String(contentsOf: configFile, encoding: .utf8)
+            let lines = configContent.components(separatedBy: CharacterSet.newlines)
+
+            // Find the profile section
+            var inProfileSection = false
+
+            // Look for the sso_session name in the profile section
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: CharacterSet.whitespaces)
+
+                if trimmedLine == "[profile \(profileName)]" {
+                    inProfileSection = true
+                    continue
+                } else if trimmedLine.hasPrefix("[") && inProfileSection {
+                    break
+                }
+
+                if inProfileSection && trimmedLine.hasPrefix("sso_session") {
+                    let parts = trimmedLine.components(separatedBy: "=")
+                    if parts.count > 1 {
+                        return parts[1].trimmingCharacters(in: CharacterSet.whitespaces)
+                    }
+                }
+            }
+
+            return nil
+        } catch {
+            print("Error reading config file: \(error)")
+            return nil
+        }
+    }
+    
     func getProfile(_ profileName: String) -> AWSProfile? {
         let profiles = getProfiles()
         return profiles.first(where: { $0.name == profileName })
