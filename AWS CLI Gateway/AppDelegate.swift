@@ -29,7 +29,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Force save profile history before terminating
         ProfileHistoryManager.shared.persistChanges()
     }
-    
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Only show the dialog if there's an active profile
+        if MenuBarManager.shared.hasActiveSession() {
+            let alert = NSAlert()
+            alert.messageText = "Quit AWS SSO Gateway"
+            alert.informativeText = "Would you like to clear your active SSO session cache before quitting?"
+            alert.addButton(withTitle: "Quit & Clear Cache")
+            alert.addButton(withTitle: "Just Quit")
+            alert.addButton(withTitle: "Cancel")
+
+            let response = alert.runModal()
+
+            switch response {
+            case .alertFirstButtonReturn: // Quit & Clear Cache
+                _ = ConfigManager.shared.clearSSOCache()
+                return .terminateNow
+
+            case .alertSecondButtonReturn: // Just Quit
+                return .terminateNow
+
+            default: // Cancel
+                return .terminateCancel
+            }
+        }
+
+        // No active profile, just quit
+        return .terminateNow
+    }
+ 
     // MARK: - Setup
     
     private func setupNotifications() {
