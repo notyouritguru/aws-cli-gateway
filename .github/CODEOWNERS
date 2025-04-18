@@ -1,0 +1,5 @@
+# This file assigns code owners who will automatically be requested for review
+# on pull requests that modify certain files.
+
+# Default owner for everything in the repo
+*       @dmcphearson
