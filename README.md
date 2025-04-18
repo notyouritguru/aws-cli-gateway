@@ -8,18 +8,16 @@
 
 A menu bar macOS application that simplifies the management of AWS profiles and sessions, with a focus on AWS SSO.
 
-## What's New in Version 0.3.0
+## What's New in Version 0.4.0
 
-- **Improved Code Architecture**: Refactored script management into a dedicated manager for better performance
-- **UI Refinements**: Enhanced menu bar experience with more responsive elements
-- **Stability Improvements**: Fixed issues with session management and terminal command handling
+- **Session Management Improvements**: Added the ability to clear cache for active sessions on quit
+- **New Tools & Settings Menu**: Reorganized options into a dedicated submenu for better organization
+- **Install CLI Tools**: Simplified access to terminal integration (formerly "Install Terminal Commands")
+- **AWS Console Access**: Quickly open the AWS Console for your active session directly from the menu
+- **UI Refinements**: Enhanced menu organization and visual clarity
+- **Official Signing**: App is now signed with an Apple Developer ID for seamless installation
 
-### Version 0.2.0 Release Notes
-
-- **Terminal Integration**: The new ```gateway``` command lets you run AWS CLI commands using your connected profile <br> without specifying ```--profile``` every time
-- **Connected Profile**: Simplified workflow that automatically uses your connected profile in terminal commands
-- **Enhanced Session Management**: Improved session tracking and renewal with more stable performance
-- **Debug Tools**: Added diagnostic features to help troubleshoot profile and session issues
+### [View the previous release notes](Release%20Notes.md)
 
 ## Features
 
@@ -35,11 +33,13 @@ AWS CLI Gateway offers a comprehensive set of features to streamline your AWS pr
    - **Visual Indicators**: Color-coded status indicators show session state at a glance
    - **Automatic Session Renewal**: Renew sessions before they expire
    - **Session Expiration Handling**: Clear notifications when sessions expire
+   - **Cache Management**: Option to clear SSO cache when quitting with active sessions
 
 3. **Menu Bar Integration**
    - **Quick Access**: Connect to profiles directly from your macOS menu bar
    - **Session Timer**: View remaining session time without opening the main app
    - **Status Indicators**: See session status with visual cues
+   - **Tools & Settings**: Dedicated submenu for application utilities and preferences
 
 4. **Terminal Integration**
    - **Gateway Command**: Use the ```gateway``` command to run AWS CLI commands with your connected profile
@@ -48,16 +48,9 @@ AWS CLI Gateway offers a comprehensive set of features to streamline your AWS pr
 
 ## Installation
 
-This app is open source and not signed with an Apple Developer ID.
+Download the latest release from the Release Page and move the application to your Applications folder. The app is signed with an Apple Developer ID for seamless installation.
 
-### Option 1: Download the Application
-
-1. Download the ```.zip``` file from the Release Page2. Move the application to your Applications folder
-3. When launching for the first time, macOS will show a security warning
-4. Go to **System Settings > Privacy & Security** and click **Open Anyway**
-5. Confirm by clicking **Open** in the dialog that appears
-
-### Option 2: Build from Source
+### Build from Source
 
 1. Clone this repository:
    ```
@@ -84,7 +77,7 @@ This app is open source and not signed with an Apple Developer ID.
 To install the ```gateway``` command:
 
 1. Click on the AWS CLI Gateway menu bar icon
-2. Select **Install Terminal Command**
+2. Select **Tools & Settings > Install CLI Tools**
 3. Provide your administrator password when prompted
 
 Once installed, you can use commands like:
@@ -140,7 +133,7 @@ Contributions are welcome! Please reach out if you'd like to contribute to this 
 
 ## Future Features/Ideas
 
-- **IAM Profile Managment**:
+- **IAM Profile Management**:
     - **Secure Credential Storage**: Store your credentials securely in macOS Keychain instead of plaintext
     - **Credential Rotation**: Built-in reminders for rotating access keys per security best practices
 - **Enhanced Profile Organization**:
@@ -149,4 +142,4 @@ Contributions are welcome! Please reach out if you'd like to contribute to this 
 - **Enhanced Terminal Integration**:
     - **Custom Commands**: Create aliases for complex AWS CLI commands
     - **Auto-Completion**: Context-aware command completion
-- **AWS CLI Config File Management**:
+- **AWS CLI Config File Management**

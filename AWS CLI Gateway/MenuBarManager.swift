@@ -371,7 +371,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // MARK: - Build the Dropdown
 
-
     @MainActor
     @objc private func buildMenu() {
         let currentSessionTime = sessionMenuItem?.title ?? "Session: --:--:--"
@@ -423,7 +422,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 }
 
                 // Use the profile's displayName property which already handles the default case
-                let profileButton = ProfileButton(frame: NSRect(x: 30, y: 0, width: maxProfileWidth, height: Constants.UI.menuItemHeight))
+                let profileButton = ProfileButton(frame: NSRect(x: 40, y: 0, width: maxProfileWidth, height: Constants.UI.menuItemHeight))
                 profileButton.title = profile.displayName
                 profileButton.target = self
                 profileButton.action = #selector(showProfileDetails(_:))
@@ -540,16 +539,53 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         clearCacheItem.target = self
         mainMenu.addItem(clearCacheItem)
 
-        // Add the terminal command installation option
-        let installCLIItem = NSMenuItem(title: "Install Terminal Command", action: #selector(installCLI), keyEquivalent: "")
+        let toolsSubmenu = NSMenu()
+        let toolsItem = NSMenuItem(title: "Tools & Settings", action: nil, keyEquivalent: "")
+        toolsItem.submenu = toolsSubmenu
+
+        let installCLIItem = NSMenuItem(title: "Install CLI Tools", action: #selector(installCLI), keyEquivalent: "")
         installCLIItem.target = self
-        mainMenu.addItem(installCLIItem)
+        toolsSubmenu.addItem(installCLIItem)
+
+        if activeProfile != nil {
+         let openConsoleItem = NSMenuItem(title: "Open AWS Console", action: #selector(openConsole), keyEquivalent: "")
+        openConsoleItem.target = self
+        toolsSubmenu.addItem(openConsoleItem)
+        }
+
+        mainMenu.addItem(toolsItem)
 
         mainMenu.addItem(NSMenuItem.separator())
         mainMenu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    // Add this new method to handle star button clicks
+    func hasActiveSession() -> Bool {
+        return activeProfile != nil
+    }
+
+    
+    @objc func openConsole() {
+        guard let activeProfile = activeProfile else {
+            print("No active profile found")
+            return
+        }
+
+        print("Opening console for profile: \(activeProfile)")
+
+        // Get the SSO start URL from the config file
+        if let ssoStartUrl = ConfigManager.shared.getSSOStartUrl(for: activeProfile) {
+            print("Attempting to open URL: \(ssoStartUrl)")
+            if let url = URL(string: ssoStartUrl) {
+                let success = NSWorkspace.shared.open(url)
+                print("URL open result: \(success ? "success" : "failed")")
+            } else {
+                print("Failed to create URL from string: \(ssoStartUrl)")
+            }
+        } else {
+            print("No SSO start URL found for profile: \(activeProfile)")
+        }
+    }
+
     @MainActor
     @objc private func toggleProfileConnection(_ sender: ProfileButton) {
         guard let profile = sender.profile else { return }
@@ -558,11 +594,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             // If it's already the active profile, do nothing
             return
         } else {
-            // Just mark this profile as connected in ProfileHistoryManager
+            // If it's not the active profile, disconnect the current one
             ProfileHistoryManager.shared.setConnectedProfile(profile.name)
 
-            // This is critical - we need to update activeProfile to trigger the didSet
-            // which will start SessionManager monitoring
             self.activeProfile = profile.name
 
             // Update SessionManager directly to ensure it starts monitoring
@@ -577,10 +611,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    // Add this method to show profile details
     @MainActor
     @objc private func showProfileDetails(_ sender: ProfileButton) {
-        // For now, just connect to the profile when clicking its name
         connectToProfile(sender)
     }
 

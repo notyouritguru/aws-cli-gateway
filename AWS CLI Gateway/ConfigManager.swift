@@ -621,6 +621,70 @@ class ConfigManager {
         }
         return nil
     }
+
+    func getSSOStartUrl(for profileName: String) -> String? {
+        let configPath = Constants.Paths.awsConfigFile.path
+
+        do {
+            let configContent = try String(contentsOfFile: configPath, encoding: .utf8)
+            let lines = configContent.components(separatedBy: CharacterSet.newlines)
+
+            var currentProfile: String?
+
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+                if trimmedLine.hasPrefix("[profile ") && trimmedLine.hasSuffix("]") {
+                    let startIndex = trimmedLine.index(trimmedLine.startIndex, offsetBy: 9)
+                    let endIndex = trimmedLine.index(trimmedLine.endIndex, offsetBy: -1)
+                    currentProfile = String(trimmedLine[startIndex..<endIndex])
+                }
+
+                if currentProfile == profileName && trimmedLine.hasPrefix("sso_start_url = ") {
+                    // Extract the URL part and trim any whitespace
+                    let startIndex = trimmedLine.index(trimmedLine.startIndex, offsetBy: 15)
+                    let urlString = String(trimmedLine[startIndex...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    return urlString
+                }
+            }
+
+            return nil
+        } catch {
+            print("Error reading config file: \(error)")
+            return nil
+        }
+    }
+
+    func clearSSOCache() -> Bool {
+        let cliCachePath = Constants.Paths.awsCliCacheDirectory.path
+        let ssoCachePath = Constants.Paths.awsConfigDirectory.appendingPathComponent("sso/cache").path
+
+        do {
+            // Clear CLI cache
+            let cliCacheContents = try FileManager.default.contentsOfDirectory(atPath: cliCachePath)
+            for file in cliCacheContents where file.hasSuffix(".json") {
+                let filePath = URL(fileURLWithPath: cliCachePath).appendingPathComponent(file).path
+                try FileManager.default.removeItem(atPath: filePath)
+                print("Deleted CLI cache file: \(file)")
+            }
+
+            // Clear SSO cache
+            if FileManager.default.fileExists(atPath: ssoCachePath) {
+                let ssoCacheContents = try FileManager.default.contentsOfDirectory(atPath: ssoCachePath)
+                for file in ssoCacheContents where file.hasSuffix(".json") {
+                    let filePath = URL(fileURLWithPath: ssoCachePath).appendingPathComponent(file).path
+                    try FileManager.default.removeItem(atPath: filePath)
+                    print("Deleted SSO cache file: \(file)")
+                }
+            }
+
+            return true
+        } catch {
+            print("Error clearing SSO cache: \(error)")
+            return false
+        }
+    }
+
 }
 
 struct IAMProfile: Codable {
