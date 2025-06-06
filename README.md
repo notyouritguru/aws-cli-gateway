@@ -54,7 +54,7 @@ Download the latest release from the Release Page and move the application to yo
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/aws-cli-gateway.git
+   git clone https://github.com/notyouritguru/aws-cli-gateway.git
    cd aws-cli-gateway
    ```
 
